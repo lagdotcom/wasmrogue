@@ -28,7 +28,7 @@
         }
     }
 
-    var module = "e304b07e6c1c5a51.wasm";
+    var module = "63ad89014d9b6c49.wasm";
 
     class WasmInterface {
         i;

@@ -23,9 +23,9 @@
 
     (local.set $i (i32.const 0))
     (local.set $y (i32.const 0))
-    (block (loop
+    (block (loop $y-loop
       (local.set $x (i32.const 0))
-      (block (loop
+      (block (loop $x-loop
         (if (i32.or
           (i32.or
             (i32.eq (local.get $x) (i32.const 0))
@@ -42,13 +42,11 @@
 
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
         (local.set $x (i32.add (local.get $x) (i32.const 1)))
-        (br_if 1 (i32.eq (local.get $x) (local.get $w)))
-        (br 0)
+        (br_if $x-loop (i32.ne (local.get $x) (local.get $w)))
       ))
 
       (local.set $y (i32.add (local.get $y) (i32.const 1)))
-      (br_if 1 (i32.eq (local.get $y) (local.get $h)))
-      (br 0)
+      (br_if $y-loop (i32.ne (local.get $y) (local.get $h)))
     ))
   )
 
