@@ -2,3 +2,5 @@
 /build/*.wasm
 /build/*.wasm.map
 /build/*.asm.js
+/public/*.js.map
+/public/*.wasm

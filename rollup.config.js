@@ -5,8 +5,13 @@ import url from "@rollup/plugin-url";
 export default {
   input: "src/index.ts",
   output: {
+    sourcemap: true,
     file: "public/bundle.js",
-    format: "cjs",
+    format: "iife",
   },
-  plugins: [url({ include: ["**/*.wasm"] }), typescript(), nodeResolve()],
+  plugins: [
+    url({ include: ["**/*.wasm"], limit: 1 }),
+    typescript(),
+    nodeResolve(),
+  ],
 };

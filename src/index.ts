@@ -1,9 +1,14 @@
+import { Display } from "./Display";
 import getInterface from "./interface";
 
-getInterface().then((ex) => {
-  const { add, fib } = ex;
-  console.log(add(3, 4));
-  console.log(fib(18));
+getInterface().then((i) => {
+  (window as any).i = i;
 
-  console.log(ex);
+  i.initialise(80, 50);
+
+  const px = Math.floor(i.width / 2);
+  const py = Math.floor(i.height / 2);
+  i.draw(px, py, "@");
+
+  (window as any).d = new Display(i);
 });
