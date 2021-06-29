@@ -4,9 +4,15 @@ interface ModuleInterface {
   gHeight: WebAssembly.Global;
   gWidth: WebAssembly.Global;
   gTiles: WebAssembly.Global;
+  gPX: WebAssembly.Global;
+  gPY: WebAssembly.Global;
+
   memory: WebAssembly.Memory;
+
   draw(x: number, y: number, ch: number): void;
   initialise(w: number, h: number): void;
+  input(code: number): boolean;
+  playerMove(mx: number, my: number): void;
 }
 
 export class WasmInterface {
@@ -21,6 +27,12 @@ export class WasmInterface {
   get tileSize(): number {
     return this.width * this.height;
   }
+  get px(): number {
+    return this.i.gPX.value;
+  }
+  get py(): number {
+    return this.i.gPY.value;
+  }
 
   get tiles() {
     return new Uint8Array(
@@ -34,6 +46,10 @@ export class WasmInterface {
 
   initialise(width: number, height: number): void {
     return this.i.initialise(width, height);
+  }
+
+  input(id: number): boolean {
+    return this.i.input(id);
   }
 }
 

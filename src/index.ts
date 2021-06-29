@@ -1,4 +1,5 @@
-import { Display } from "./Display";
+import Display from "./Display";
+import Inputs from "./Inputs";
 import getInterface from "./interface";
 
 getInterface().then((i) => {
@@ -6,9 +7,12 @@ getInterface().then((i) => {
 
   i.initialise(80, 50);
 
-  const px = Math.floor(i.width / 2);
-  const py = Math.floor(i.height / 2);
-  i.draw(px, py, "@");
+  const d = new Display(i);
+  const n = new Inputs(i, (key, id) => {
+    console.log("key", key, id);
+    d.refresh();
+  });
 
-  (window as any).d = new Display(i);
+  (window as any).d = d;
+  (window as any).n = n;
 });
