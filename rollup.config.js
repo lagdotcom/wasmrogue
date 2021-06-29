@@ -10,7 +10,7 @@ export default {
     format: "iife",
   },
   plugins: [
-    url({ include: ["**/*.wasm"], limit: 1 }),
+    url({ fileName:'[name][extname]', include: ["**/*.wasm"], limit: 1 }),
     typescript(),
     nodeResolve(),
   ],

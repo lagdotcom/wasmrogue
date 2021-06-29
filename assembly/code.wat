@@ -2,9 +2,19 @@
   (global $chSpace i32 (i32.const 32))
   (global $chWall i32 (i32.const 35))
   (global $chDot i32 (i32.const 46))
+
+  (global $kUp i32 (i32.const 1000))
+  (global $kRight i32 (i32.const 1001))
+  (global $kDown i32 (i32.const 1002))
+  (global $kLeft i32 (i32.const 1003))
+
   (global $gWidth (export "gWidth") (mut i32) (i32.const 0))
   (global $gHeight (export "gHeight") (mut i32) (i32.const 0))
   (global $gTiles (export "gTiles") (mut i32) (i32.const 0))
+
+  (global $px (export "gPX") (mut i32) (i32.const 0))
+  (global $py (export "gPY") (mut i32) (i32.const 0))
+
   (memory (export "memory") 1) ;; 64kB should be enough for anyone
 
   (func $initialise (export "initialise") (param $w i32) (param $h i32)
@@ -15,6 +25,9 @@
 
     (global.set $gWidth (local.get $w))
     (global.set $gHeight (local.get $h))
+
+    (global.set $px (i32.div_u (local.get $w) (i32.const 2)))
+    (global.set $py (i32.div_u (local.get $h) (i32.const 2)))
 
     (local.set $count (i32.mul
       (local.get $w)
@@ -65,5 +78,41 @@
 
   (func $draw (export "draw") (param $x i32) (param $y i32) (param $ch i32)
     (i32.store8 (call $getXY (local.get $x) (local.get $y)) (local.get $ch))
+  )
+
+  (func $playerMove (export "playerMove") (param $mx i32) (param $my i32) (result i32)
+    ;; TODO - walls etc.
+    (global.set $px (i32.add (global.get $px) (local.get $mx)))
+    (global.set $py (i32.add (global.get $py) (local.get $my)))
+    (i32.const 1)
+  )
+
+  (func $input (export "input") (param $ch i32) (result i32)
+    (if (i32.eq (local.get $ch) (global.get $kUp))
+      (then (block
+        (call $playerMove (i32.const 0) (i32.const -1))
+        (return)
+      ))
+    )
+    (if (i32.eq (local.get $ch) (global.get $kRight))
+      (then (block
+        (call $playerMove (i32.const 1) (i32.const 0))
+        (return)
+      ))
+    )
+    (if (i32.eq (local.get $ch) (global.get $kDown))
+      (then (block
+        (call $playerMove (i32.const 0) (i32.const 1))
+        (return)
+      ))
+    )
+    (if (i32.eq (local.get $ch) (global.get $kLeft))
+      (then (block
+        (call $playerMove (i32.const -1) (i32.const 0))
+        (return)
+      ))
+    )
+
+    (i32.const 0)
   )
 )

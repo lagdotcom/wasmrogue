@@ -1,7 +1,9 @@
 import { WasmInterface } from "./interface";
 
-export class Display {
+export default class Display {
   e: HTMLTextAreaElement;
+  w: number;
+  h: number;
 
   constructor(private i: WasmInterface) {
     this.e = document.createElement("textarea");
@@ -9,18 +11,24 @@ export class Display {
     this.e.rows = i.height;
     this.e.readOnly = true;
 
+    this.w = i.width;
+    this.h = i.height;
+
     document.body.append(this.e);
     this.refresh();
   }
 
+  tile(x: number, y: number) {
+    if (x === this.i.px && y === this.i.py) return "@";
+    return String.fromCharCode(this.i.tiles[y * this.w + x]);
+  }
+
   refresh() {
     let s = "";
-    let i = 0;
-    for (let y = 0; y < this.i.height; y++) {
+    for (let y = 0; y < this.h; y++) {
       s += "\n";
-      for (let x = 0; x < this.i.width; x++) {
-        const ch = String.fromCharCode(this.i.tiles[i]);
-        i++;
+      for (let x = 0; x < this.w; x++) {
+        const ch = this.tile(x, y);
 
         s += ch;
       }

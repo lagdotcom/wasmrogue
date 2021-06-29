@@ -4,7 +4,7 @@
   "description": "WASM rogue!",
   "main": "index.js",
   "scripts": {
-    "wasm:build": "wat2wasm assembly/manual.wat -o build/manual.wasm",
+    "wasm:build": "wat2wasm assembly/code.wat -o build/code.wasm",
     "wasm:watch": "watch \"npm run wasm:build\" assembly --wait=1 --interval=1",
     "rollup": "rollup -c",
     "watch": "rollup -cw",
