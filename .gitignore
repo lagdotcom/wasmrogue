@@ -1,0 +1,4 @@
+/node_modules
+/build/*.wasm
+/build/*.wasm.map
+/build/*.asm.js
