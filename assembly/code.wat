@@ -88,6 +88,7 @@
   )
 
   (func $input (export "input") (param $ch i32) (result i32)
+    ;; TODO - use table?
     (if (i32.eq (local.get $ch) (global.get $kUp))
       (then (block
         (call $playerMove (i32.const 0) (i32.const -1))
