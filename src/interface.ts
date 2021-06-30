@@ -16,6 +16,8 @@ interface ModuleInterface {
 }
 
 export class WasmInterface {
+  tiles: Uint8Array;
+
   constructor(private i: ModuleInterface) {}
 
   get width(): number {
@@ -34,18 +36,15 @@ export class WasmInterface {
     return this.i.gPY.value;
   }
 
-  get tiles() {
-    return new Uint8Array(
-      this.i.memory.buffer.slice(this.i.gTiles.value, this.tileSize)
-    );
-  }
-
   draw(x: number, y: number, ch: string): void {
     return this.i.draw(x, y, ch.charCodeAt(0));
   }
 
   initialise(width: number, height: number): void {
-    return this.i.initialise(width, height);
+    this.i.initialise(width, height);
+    this.tiles = new Uint8Array(
+      this.i.memory.buffer.slice(this.i.gTiles.value, this.tileSize)
+    );
   }
 
   input(id: number): boolean {

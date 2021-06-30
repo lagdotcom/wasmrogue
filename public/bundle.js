@@ -98,6 +98,7 @@
 
     class WasmInterface {
         i;
+        tiles;
         constructor(i) {
             this.i = i;
         }
@@ -116,14 +117,12 @@
         get py() {
             return this.i.gPY.value;
         }
-        get tiles() {
-            return new Uint8Array(this.i.memory.buffer.slice(this.i.gTiles.value, this.tileSize));
-        }
         draw(x, y, ch) {
             return this.i.draw(x, y, ch.charCodeAt(0));
         }
         initialise(width, height) {
-            return this.i.initialise(width, height);
+            this.i.initialise(width, height);
+            this.tiles = new Uint8Array(this.i.memory.buffer.slice(this.i.gTiles.value, this.tileSize));
         }
         input(id) {
             return this.i.input(id);

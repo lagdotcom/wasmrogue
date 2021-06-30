@@ -22,6 +22,8 @@
     (local $x i32)
     (local $y i32)
     (local $i i32)
+    (local $last-x i32)
+    (local $last-y i32)
 
     (global.set $gWidth (local.get $w))
     (global.set $gHeight (local.get $h))
@@ -34,19 +36,22 @@
       (local.get $h)
     ))
 
+    (local.set $last-x (i32.sub (local.get $w) (i32.const 1)))
+    (local.set $last-y (i32.sub (local.get $h) (i32.const 1)))
+
     (local.set $i (i32.const 0))
     (local.set $y (i32.const 0))
-    (block (loop $y-loop
+    (loop $y-loop
       (local.set $x (i32.const 0))
-      (block (loop $x-loop
+      (loop $x-loop
         (if (i32.or
           (i32.or
             (i32.eq (local.get $x) (i32.const 0))
             (i32.eq (local.get $y) (i32.const 0))
           )
           (i32.or
-            (i32.eq (local.get $x) (i32.sub (local.get $w) (i32.const 1)))
-            (i32.eq (local.get $y) (i32.sub (local.get $h) (i32.const 1)))
+            (i32.eq (local.get $x) (local.get $last-x))
+            (i32.eq (local.get $y) (local.get $last-y))
           )
         )
           (then (i32.store8 (local.get $i) (global.get $chWall)))
@@ -54,13 +59,17 @@
         )
 
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
-        (local.set $x (i32.add (local.get $x) (i32.const 1)))
-        (br_if $x-loop (i32.ne (local.get $x) (local.get $w)))
-      ))
+        (br_if $x-loop (i32.ne
+          (local.tee $x (i32.add (local.get $x) (i32.const 1)))
+          (local.get $w))
+        )
+      )
 
-      (local.set $y (i32.add (local.get $y) (i32.const 1)))
-      (br_if $y-loop (i32.ne (local.get $y) (local.get $h)))
-    ))
+      (br_if $y-loop (i32.ne
+        (local.tee $y (i32.add (local.get $y) (i32.const 1)))
+        (local.get $h))
+      )
+    )
   )
 
   (func $getXY (param $x i32) (param $y i32) (result i32)
@@ -88,7 +97,7 @@
   )
 
   (func $input (export "input") (param $ch i32) (result i32)
-    ;; TODO - use table?
+    ;; TODO - convert to use tables?
     (if (i32.eq (local.get $ch) (global.get $kUp))
       (then (block
         (call $playerMove (i32.const 0) (i32.const -1))
