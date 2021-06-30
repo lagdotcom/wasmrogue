@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "wasm:build": "wat2wasm assembly/code.wat -o build/code.wasm",
-    "wasm:watch": "watch \"npm run wasm:build\" assembly --wait=1 --interval=1",
+    "wasm:debug": "wat2wasm assembly/code.wat --debug-names -o build/code.wasm",
+    "wasm:watch": "watch \"npm run wasm:debug\" assembly --wait=1 --interval=1",
     "rollup": "rollup -c",
     "watch": "rollup -cw",
     "serve": "serve public"

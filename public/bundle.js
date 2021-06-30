@@ -117,12 +117,15 @@
         get py() {
             return this.i.gPY.value;
         }
+        slice(start, length) {
+            return new Uint8Array(this.i.memory.buffer.slice(start, start + length));
+        }
         draw(x, y, ch) {
             return this.i.draw(x, y, ch.charCodeAt(0));
         }
         initialise(width, height) {
             this.i.initialise(width, height);
-            this.tiles = new Uint8Array(this.i.memory.buffer.slice(this.i.gTiles.value, this.tileSize));
+            this.tiles = this.slice(this.i.gTiles.value, this.tileSize);
         }
         input(id) {
             return this.i.input(id);

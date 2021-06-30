@@ -36,15 +36,17 @@ export class WasmInterface {
     return this.i.gPY.value;
   }
 
+  private slice(start: number, length: number) {
+    return new Uint8Array(this.i.memory.buffer.slice(start, start + length));
+  }
+
   draw(x: number, y: number, ch: string): void {
     return this.i.draw(x, y, ch.charCodeAt(0));
   }
 
   initialise(width: number, height: number): void {
     this.i.initialise(width, height);
-    this.tiles = new Uint8Array(
-      this.i.memory.buffer.slice(this.i.gTiles.value, this.tileSize)
-    );
+    this.tiles = this.slice(this.i.gTiles.value, this.tileSize);
   }
 
   input(id: number): boolean {
