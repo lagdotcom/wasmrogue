@@ -10,7 +10,10 @@
   (global $width (export "gWidth") (mut i32) (i32.const 0))
   (global $height (export "gHeight") (mut i32) (i32.const 0))
 
-[[reserve Action 16]]
+[[struct NoneAction id:u8]]
+[[struct MoveAction id:u8 dx:s8 dy:s8]]
+
+[[reserve Action Math.max(sizeof_NoneAction,sizeof_MoveAction)]]
 [[reserve Tiles 100*100 gTiles]]
 
   (global $px (export "gPX") (mut i32) (i32.const 0))
@@ -25,6 +28,8 @@
     (local $i i32)
     (local $lastX i32)
     (local $lastY i32)
+
+    ;; TODO: check $w * $h < sizeof_Tiles
 
     (global.set $width (local.get $w))
     (global.set $height (local.get $h))
@@ -103,43 +108,43 @@
     (call $convertToAction (local.get $ch))
     (call $applyAction)
 
-    (i32.load8_u (global.get $memAction))
+    [[load $memAction NoneAction.id]]
   )
 
   (func $convertToAction (param $ch i32)
     ;; default to no action
-    (i32.store8 (global.get $memAction) (global.get $actNone))
+    [[store $memAction NoneAction.id $actNone]]
 
     ;; TODO convert to use tables?
     (if (i32.eq (local.get $ch) (global.get $kUp))
       (then (block
-        (i32.store8          (global.get $memAction) (global.get $actMove))
-        (i32.store8 offset=1 (global.get $memAction) (i32.const 0))
-        (i32.store8 offset=2 (global.get $memAction) (i32.const -1))
+        [[store $memAction MoveAction.id $actMove]]
+        [[store $memAction MoveAction.dx 0]]
+        [[store $memAction MoveAction.dy -1]]
         (return)
       ))
     )
     (if (i32.eq (local.get $ch) (global.get $kRight))
       (then (block
-        (i32.store8          (global.get $memAction) (global.get $actMove))
-        (i32.store8 offset=1 (global.get $memAction) (i32.const 1))
-        (i32.store8 offset=2 (global.get $memAction) (i32.const 0))
+        [[store $memAction MoveAction.id $actMove]]
+        [[store $memAction MoveAction.dx 1]]
+        [[store $memAction MoveAction.dy 0]]
         (return)
       ))
     )
     (if (i32.eq (local.get $ch) (global.get $kDown))
       (then (block
-        (i32.store8          (global.get $memAction) (global.get $actMove))
-        (i32.store8 offset=1 (global.get $memAction) (i32.const 0))
-        (i32.store8 offset=2 (global.get $memAction) (i32.const 1))
+        [[store $memAction MoveAction.id $actMove]]
+        [[store $memAction MoveAction.dx 0]]
+        [[store $memAction MoveAction.dy 1]]
         (return)
       ))
     )
     (if (i32.eq (local.get $ch) (global.get $kLeft))
       (then (block
-        (i32.store8          (global.get $memAction) (global.get $actMove))
-        (i32.store8 offset=1 (global.get $memAction) (i32.const -1))
-        (i32.store8 offset=2 (global.get $memAction) (i32.const 0))
+        [[store $memAction MoveAction.id $actMove]]
+        [[store $memAction MoveAction.dx -1]]
+        [[store $memAction MoveAction.dy 0]]
         (return)
       ))
     )
@@ -153,12 +158,12 @@
   (func $applyNoAction)
 
   (func $applyMoveAction
-    (i32.load8_s offset=1 (global.get $memAction))
-    (i32.load8_s offset=2 (global.get $memAction))
+    [[load $memAction MoveAction.dx]]
+    [[load $memAction MoveAction.dy]]
     (call $playerMove)
   )
 
   (func $applyAction
-    (call_indirect $actions (i32.load8_u (global.get $memAction)))
+    (call_indirect $actions [[load $memAction NoneAction.id]])
   )
 )
