@@ -3,24 +3,20 @@
   (global $chWall i32 (i32.const 35))
   (global $chDot i32 (i32.const 46))
 
-  (global $kUp i32 (i32.const 1000))
-  (global $kRight i32 (i32.const 1001))
-  (global $kDown i32 (i32.const 1002))
-  (global $kLeft i32 (i32.const 1003))
+[[consts k 1000 Up Right Down Left]]
 
-  (global $actNone i32 (i32.const 0))
-  (global $actMove i32 (i32.const 1))
+[[consts act 0 None Move]]
 
   (global $width (export "gWidth") (mut i32) (i32.const 0))
   (global $height (export "gHeight") (mut i32) (i32.const 0))
 
-  (global $memAction i32 (i32.const 0))
-  (global $memTiles (export "gTiles") (mut i32) (i32.const 16))
+[[reserve Action 16]]
+[[reserve Tiles 10000 gTiles]]
 
   (global $px (export "gPX") (mut i32) (i32.const 0))
   (global $py (export "gPY") (mut i32) (i32.const 0))
 
-  (memory (export "memory") 1) ;; 64kB should be enough for anyone
+[[memory memory]]
 
   (func $initialise (export "initialise") (param $w i32) (param $h i32)
     ;; (local $count i32)
