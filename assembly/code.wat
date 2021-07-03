@@ -1,7 +1,7 @@
 (module
-  (global $chSpace i32 (i32.const 32))
-  (global $chWall i32 (i32.const 35))
-  (global $chDot i32 (i32.const 46))
+  (global $chSpace i32 [[eval ' ']])
+  (global $chWall i32 [[eval '#']])
+  (global $chDot i32 [[eval '.']])
 
 [[consts k 1000 Up Right Down Left]]
 

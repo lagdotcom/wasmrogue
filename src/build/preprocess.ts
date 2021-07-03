@@ -53,6 +53,7 @@ class Preprocessor {
     this.env = {};
     this.processors = {
       consts: this.consts.bind(this),
+      eval: this.evaluate.bind(this),
       load: this.load.bind(this),
       memory: this.memory.bind(this),
       reserve: this.reserve.bind(this),
@@ -73,8 +74,12 @@ class Preprocessor {
 
   private evalNumber(code: string) {
     const value = this.eval(code);
+    // evaluate single chars as their key code
+    if (typeof value === "string" && value.length === 1)
+      return value.charCodeAt(0);
+
     if (typeof value !== "number" || isNaN(value))
-      throw new Error(`isNaN: ${code}`);
+      throw new Error(`isNaN: ${code} = ${value}`);
 
     return value;
   }
@@ -194,6 +199,11 @@ class Preprocessor {
     const start = this.evalConst(sstart, type);
 
     return `(${type}.${load}${offset} ${start})`;
+  }
+
+  evaluate(...parts: string[]) {
+    const code = parts.join(" ");
+    return this.evalConst(code, "i32");
   }
 }
 
