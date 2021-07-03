@@ -11,7 +11,7 @@
   (global $height (export "gHeight") (mut i32) (i32.const 0))
 
 [[reserve Action 16]]
-[[reserve Tiles 10000 gTiles]]
+[[reserve Tiles 100*100 gTiles]]
 
   (global $px (export "gPX") (mut i32) (i32.const 0))
   (global $py (export "gPY") (mut i32) (i32.const 0))

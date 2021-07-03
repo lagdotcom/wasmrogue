@@ -1,74 +1,119 @@
 import { readFileSync, writeFileSync } from "fs";
 
+import scopedEval from "./scoped-eval";
+
+const WASMPageSize = 0x10000;
+
 function genExport(name?: string): string {
   if (!name) return "";
   return ` (export "${name}")`;
 }
 
-function consts(prefix: string, sstart: string, ...names: string[]) {
-  const start = parseInt(sstart, 10);
-  if (isNaN(start)) throw new Error(`consts: "${sstart}" isNaN`);
+type Processor = (...args: string[]) => string;
 
-  return names
-    .map((n, i) => `  (global $${prefix}${n} i32 (i32.const ${start + i}))`)
-    .join("\n");
-}
+class Preprocessor {
+  env: Record<string, any>;
+  processors: Record<string, Processor>;
+  ptr: number;
 
-let memptr = 0;
-function reserve(name: string, ssize: string, exportName?: string) {
-  const size = parseInt(ssize, 10);
-  if (isNaN(size)) throw new Error(`reserve: "${ssize}" isNaN`);
-
-  const code = `  (global $mem${name}${genExport(
-    exportName
-  )} i32 (i32.const ${memptr})) ;; size=${size}`;
-  memptr += size;
-
-  return code;
-}
-
-const WASMPageSize = 0x10000;
-function memory(exportName?: string) {
-  const pages = Math.ceil(memptr / WASMPageSize);
-  const max = pages * WASMPageSize;
-
-  return `  (memory${genExport(
-    exportName
-  )} ${pages}) ;; ${memptr} / ${max} used`;
-}
-
-const processors: Record<string, (...args: string[]) => string> = {
-  consts,
-  reserve,
-  memory,
-};
-
-function preprocess(src: string, dst: string) {
-  console.log(`Preprocessing ${src}...`);
-
-  let code = readFileSync(src, { encoding: "utf-8" });
-  let st = 0;
-  while (true) {
-    const i = code.indexOf("[[", st);
-    if (i < 0) break;
-
-    const j = code.indexOf("]]", i);
-    if (j < 0) break;
-
-    const old = code.slice(i, j + 2);
-    const command = old.slice(2, -2).trim();
-
-    const [p, ...args] = command.split(" ");
-    if (processors[p]) {
-      const repl = processors[p](...args);
-      code = code.slice(0, i) + repl + code.slice(j + 2);
-    } else {
-      console.warn(`ignored unknown processor: ${p}`);
-      st = i + 1;
-    }
+  constructor() {
+    this.env = {};
+    this.processors = {
+      consts: this.consts.bind(this),
+      memory: this.memory.bind(this),
+      reserve: this.reserve.bind(this),
+    };
   }
 
-  writeFileSync(dst, code);
+  private init() {
+    this.env = {};
+    this.ptr = 0;
+  }
+
+  private eval(code: string) {
+    return scopedEval(code, this.env);
+  }
+
+  private evalNumber(code: string): number {
+    const value = this.eval(code);
+    if (typeof value !== "number" || isNaN(value))
+      throw new Error(`isNaN: ${code}`);
+
+    return value;
+  }
+
+  private define<T>(name: string, value: T): [string, T] {
+    this.env[name] = value;
+    return [name, value];
+  }
+
+  process(code: string) {
+    this.init();
+
+    let o = 0;
+    while (true) {
+      const i = code.indexOf("[[", o);
+      if (i < 0) break;
+
+      const j = code.indexOf("]]", i);
+      if (j < 0) break;
+
+      const old = code.slice(i, j + 2);
+      const command = old.slice(2, -2).trim();
+
+      const [p, ...args] = command.split(" ");
+      if (this.processors[p]) {
+        const repl = this.processors[p](...args);
+        code = code.slice(0, i) + repl + code.slice(j + 2);
+      } else {
+        console.warn(`ignored unknown processor: ${p}`);
+        o = i + 1;
+      }
+    }
+
+    console.log("defines:", this.env);
+    return code;
+  }
+
+  consts(prefix: string, sstart: string, ...names: string[]) {
+    const start = this.evalNumber(sstart);
+
+    return names
+      .map((n, i) => {
+        const [name, value] = this.define(prefix + n, start + i);
+        return `  (global $${name} i32 (i32.const ${value}))`;
+      })
+      .join("\n");
+  }
+
+  reserve(section: string, ssize: string, exportName?: string) {
+    const size = this.evalNumber(ssize);
+
+    const [name, value] = this.define("mem" + section, this.ptr);
+    const code = `  (global $${name}${genExport(
+      exportName
+    )} i32 (i32.const ${value})) ;; size=${size}`;
+    this.ptr += size;
+
+    return code;
+  }
+
+  memory(exportName?: string) {
+    const pages = Math.ceil(this.ptr / WASMPageSize);
+    const max = pages * WASMPageSize;
+
+    return `  (memory${genExport(exportName)} ${pages}) ;; ${
+      this.ptr
+    } / ${max} used`;
+  }
+}
+
+function preprocess(src: string, dst: string) {
+  const original = readFileSync(src, { encoding: "utf-8" });
+  const p = new Preprocessor();
+  const transformed = p.process(original);
+
+  writeFileSync(dst, transformed);
   console.log(`Wrote: ${dst}`);
 }
 
