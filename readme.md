@@ -4,19 +4,23 @@ It's a roguelike (made during [r/roguelikedev does the complete roguelike tutori
 
 ## Notes
 
-- Input has to be grabbed by TypeScript (WASM has no DOM access) and there's no easy way to pass strings between the two execution contexts, so the key code is transmitted as an integer. In general the ASCII value of the key is used for this, but arrow keys are converted into the 1000-1003 range (this should probably change someday).
+- Input has to be grabbed by TypeScript (WASM has no DOM access) and there's no easy way to pass strings between the two execution contexts, so the key code is transmitted as an integer. I'm using the VK constants that `wglt` thoughtfully provides.
 - Pandepic dared me to write an ECS. That will give me some memory layout things to think about.
 
 ## Technical Stuff
 
 ### Memory Layout
 
-As WASM (currently) forces you into using one linear memory space, here's the layout:
+My memory layout is dynamic because my preprocessor handles most of it. Here's what is in the current build:
 
-| Start | Size   | Description   |
-| ----- | ------ | ------------- |
-| 0     | 1..3   | Player Action |
-| 16    | (w\*h) | Map tiles     |
+| Start | Size     | Description    |
+| ----- | -------- | -------------- |
+| 0     | 11\*2    | Tile types     |
+| 24    | 1..3     | Current action |
+| 32    | 32\*8    | Entity data    |
+| 2080  | 100\*100 | Tilemap        |
+
+This will probably change a fair bit when the ECS appears.
 
 ### Actions
 
@@ -28,6 +32,14 @@ The equivalent of the tutorial's Action subclasses are stored like this:
 | 01  | `s8` dx `s8` dy | Move |
 
 ## Log
+
+### 2021-06-07
+
+Fixed my parser but I'm not using it yet. Instead, looked at part 2 of the tutorial and implemented a few things. I also saw [this post](https://old.reddit.com/r/roguelikedev/comments/odulc3/update_wglt_is_blazing_fast_for_drawing_ascii_in/) and decided to use it. Might even be able to give the engine a direct memory access somehow! Anyway, I don't have an ECS yet. Will have to fix before I get too far into the tutorial.
+
+### 2021-06-06
+
+Spent hours today trying to write my own programming language parser and failing.
 
 ### 2021-06-30
 
