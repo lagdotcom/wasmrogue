@@ -8,7 +8,7 @@ export default {
   input: "src/index.ts",
   output: {
     sourcemap: true,
-    file: "public/bundle.js",
+    file: "docs/bundle.js",
     format: "iife",
   },
   plugins: [
@@ -16,6 +16,6 @@ export default {
     url({ fileName: "[name][extname]", include: ["**/*.wasm"], limit: 1 }),
     typescript(),
     nodeResolve(),
-    serve({ contentBase: "public", open: true }),
+    serve({ contentBase: "docs", open: true }),
   ],
 };
