@@ -1,9 +1,12 @@
-import { WasmInterface } from "./interface";
+import { REntity, WasmInterface } from "./interface";
 
 export default class Display {
   e: HTMLTextAreaElement;
   w: number;
   h: number;
+  entityIDs: number[];
+  entities: REntity[];
+  tiles: Uint8Array;
 
   constructor(private i: WasmInterface) {
     this.e = document.createElement("textarea");
@@ -15,15 +18,35 @@ export default class Display {
     this.h = i.height;
 
     document.body.append(this.e);
+    this.entityIDs = Array.from(Array(i.maxEntities).keys());
     this.refresh();
   }
 
   tile(x: number, y: number) {
-    if (x === this.i.px && y === this.i.py) return "@";
-    return String.fromCharCode(this.i.tiles[y * this.w + x]);
+    const e = this.entities.filter((e) => e.x === x && e.y === y);
+    if (e.length) return String.fromCharCode(e[0].ch);
+
+    return String.fromCharCode(this.tiles[y * this.w + x]);
+  }
+
+  updateEntityList() {
+    // TODO: is this good? lol
+    this.entities = this.entityIDs
+      .map((id) => this.i.entity(id))
+      .filter((e) => e.exists);
+  }
+
+  updateTiles() {
+    this.tiles = new Uint8Array(this.i.tiles.buffer, this.i.tiles.byteOffset);
   }
 
   refresh() {
+    this.updateEntityList();
+    this.updateTiles();
+    this.e.value = this.render();
+  }
+
+  private render() {
     let s = "";
     for (let y = 0; y < this.h; y++) {
       s += "\n";
@@ -34,6 +57,6 @@ export default class Display {
       }
     }
 
-    this.e.value = s.substr(1);
+    return s.substr(1);
   }
 }

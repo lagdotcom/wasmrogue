@@ -30,6 +30,43 @@ function getLoad(type: string) {
   throw new Error(`Unknown field type: ${type}`);
 }
 
+type WatThing = string | string[];
+function watItem(code: string, s: number): [WatThing, number] {
+  const parts = [];
+  let current = "";
+
+  for (let i = s; i < code.length; i++) {
+    const ch = code[i];
+
+    if (ch === "(") {
+      const [item, ln] = watItem(code, i + 1);
+      parts.push(item);
+      i += ln + 1;
+      continue;
+    }
+
+    if (ch === ")") {
+      if (current) parts.push(current);
+      return [parts, i - s];
+    }
+
+    if (ch === " ") {
+      if (current) parts.push(current);
+      current = "";
+      continue;
+    }
+
+    current += ch;
+  }
+
+  return [parts, code.length - s];
+}
+
+function watSplit(code: string): WatThing[] {
+  const [result] = watItem(code, 1);
+  return Array.isArray(result) ? result : [result];
+}
+
 type Processor = (...args: string[]) => string;
 interface StructureField {
   name: string;
@@ -45,6 +82,8 @@ interface Structure {
 
 class Preprocessor {
   env: Record<string, any>;
+  global: string[];
+  local: string[];
   processors: Record<string, Processor>;
   ptr: number;
   structures: Record<string, Structure>;
@@ -52,6 +91,8 @@ class Preprocessor {
   constructor() {
     this.env = {};
     this.processors = {
+      "=": this.evaluate.bind(this),
+      align: this.align.bind(this),
       consts: this.consts.bind(this),
       eval: this.evaluate.bind(this),
       load: this.load.bind(this),
@@ -64,6 +105,8 @@ class Preprocessor {
 
   private init() {
     this.env = {};
+    this.global = [];
+    this.local = [];
     this.ptr = 0;
     this.structures = {};
   }
@@ -85,41 +128,112 @@ class Preprocessor {
   }
 
   private evalConst(code: string, type: string) {
-    if (code[0] === "$") return `(global.get ${code})`;
-    return `(${type}.const ${this.evalNumber(code)})`;
+    if (code[0] === "$") {
+      if (this.local.includes(code)) return `(local.get ${code})`;
+      return `(global.get ${code})`;
+    }
+
+    try {
+      const number = this.evalNumber(code);
+      return `(${type}.const ${number})`;
+    } catch {
+      return code;
+    }
   }
 
   private define<T>(name: string, value: T): [string, T] {
+    // TODO: this defines [[consts]] stuff twice
+    // console.log("define:", name, value);
     this.env[name] = value;
     return [name, value];
   }
 
   process(code: string) {
     this.init();
+    const processed = [];
 
-    let o = 0;
-    while (true) {
-      const i = code.indexOf("[[", o);
-      if (i < 0) break;
+    code.split("\n").forEach((line, ln) => {
+      while (true) {
+        const i = line.lastIndexOf("[[");
+        if (i < 0) break;
 
-      const j = code.indexOf("]]", i);
-      if (j < 0) break;
+        const j = line.indexOf("]]", i);
+        if (j < 0) throw new Error(`Line ${ln}: [[ without ]]`);
 
-      const old = code.slice(i, j + 2);
-      const command = old.slice(2, -2).trim();
+        const old = line.slice(i, j + 2);
+        const command = old.slice(2, -2).trim();
 
-      const [p, ...args] = command.split(" ");
-      if (this.processors[p]) {
-        const repl = this.processors[p](...args);
-        code = code.slice(0, i) + repl + code.slice(j + 2);
-      } else {
-        console.warn(`ignored unknown processor: ${p}`);
-        o = i + 1;
+        const [p, ...args] = command.split(" ");
+        if (this.processors[p]) {
+          const repl = this.processors[p](...args) || "";
+          line = line.slice(0, i) + repl + line.slice(j + 2);
+        } else {
+          console.warn(`ignored unknown processor: ${p}`);
+        }
       }
-    }
+
+      this.scanAll(line);
+      processed.push(line);
+    });
 
     // console.log("defines:", this.env);
-    return code;
+    return processed.join("\n");
+  }
+
+  scanAll(line: string) {
+    this.scan(line, "(func ", "parseFunc");
+    this.scan(line, "(global ", "parseGlobal");
+    this.scan(line, "(local ", "parseLocal");
+    this.scan(line, "(param ", "parseLocal");
+  }
+
+  scan(line: string, pattern: string, fn: string) {
+    let s = 0;
+    while (true) {
+      const i = line.indexOf(pattern, s);
+      if (i < 0) return;
+
+      this[fn](line.substr(i));
+      s = i + 1;
+    }
+  }
+
+  parseFunc() {
+    if (this.local.length) {
+      // console.log("locals fall out of scope:", this.local);
+      this.local = [];
+    }
+  }
+
+  parseLocal(line: string) {
+    const [, name, type] = watSplit(line);
+
+    if (Array.isArray(name)) return;
+
+    // console.log("known local:", name);
+    this.local.push(name);
+  }
+
+  parseGlobal(line: string) {
+    const [, name, type, initialiser] = watSplit(line).filter(
+      (p) => typeof p === "string" || p[0] !== "export"
+    );
+
+    // invalid?
+    if (Array.isArray(name) || !Array.isArray(initialiser)) return;
+
+    // mutable global
+    if (Array.isArray(type) && type[0] === "mut") {
+      // console.log("known global:", name);
+      this.global.push(name);
+      return;
+    }
+
+    // const
+    const [itype, value] = initialiser;
+    if (itype.endsWith(".const")) {
+      this.define(name.substr(1), Number(value));
+    }
   }
 
   consts(prefix: string, sstart: string, ...names: string[]) {
@@ -128,7 +242,7 @@ class Preprocessor {
     return names
       .map((n, i) => {
         const [name, value] = this.define(prefix + n, start + i);
-        return `  (global $${name} i32 (i32.const ${value}))`;
+        return ` (global $${name} i32 (i32.const ${value}))`;
       })
       .join("\n");
   }
@@ -137,7 +251,7 @@ class Preprocessor {
     const size = this.evalNumber(ssize);
 
     const [name, value] = this.define("mem" + section, this.ptr);
-    const code = `  (global $${name}${genExport(
+    const code = `(global $${name}${genExport(
       exportName
     )} i32 (i32.const ${value})) ;; size=${size}`;
     this.ptr += size;
@@ -150,7 +264,7 @@ class Preprocessor {
     const pages = Math.ceil(this.ptr / WASMPageSize);
     const max = pages * WASMPageSize;
 
-    return `  (memory${genExport(exportName)} ${pages}) ;; ${
+    return `(memory${genExport(exportName)} ${pages}) ;; ${
       this.ptr
     } / ${max} used`;
   }
@@ -167,10 +281,9 @@ class Preprocessor {
 
     this.structures[name] = s;
     this.define("sizeof_" + name, s.size);
-    return "";
   }
 
-  store(sstart: string, path: string, svalue: string) {
+  store(sstart: string, path: string, ...code: string[]) {
     const [sname, fname] = path.split(".");
     const s = this.structures[sname];
     if (!s) throw new Error(`Unknown structure: ${sname}`);
@@ -181,7 +294,7 @@ class Preprocessor {
     const offset = f.offset > 0 ? ` offset=${f.offset}` : "";
 
     const start = this.evalConst(sstart, type);
-    const value = this.evalConst(svalue, type);
+    const value = this.evalConst(code.join(" "), type);
 
     return `(${type}.${store}${offset} ${start} ${value})`;
   }
@@ -204,6 +317,16 @@ class Preprocessor {
   evaluate(...parts: string[]) {
     const code = parts.join(" ");
     return this.evalConst(code, "i32");
+  }
+
+  align(...parts: string[]) {
+    const code = parts.join(" ");
+    const size = this.evalNumber(code || "4");
+    const offset = this.ptr % size;
+    if (offset) {
+      this.ptr += size - offset;
+      return `;; aligned to ${size} bytes`;
+    }
   }
 }
 

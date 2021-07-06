@@ -1,11 +1,13 @@
 import module from "../build/code.wasm";
 
 interface ModuleInterface {
+  gEntities: WebAssembly.Global;
+  gEntitySize: WebAssembly.Global;
   gHeight: WebAssembly.Global;
-  gWidth: WebAssembly.Global;
+  gMaxEntities: WebAssembly.Global;
+  gPlayerID: WebAssembly.Global;
   gTiles: WebAssembly.Global;
-  gPX: WebAssembly.Global;
-  gPY: WebAssembly.Global;
+  gWidth: WebAssembly.Global;
 
   memory: WebAssembly.Memory;
 
@@ -15,8 +17,18 @@ interface ModuleInterface {
   playerMove(mx: number, my: number): void;
 }
 
+export interface REntity {
+  exists: boolean;
+  x: number;
+  y: number;
+  ch: number;
+  colour: number;
+}
+
 export class WasmInterface {
-  tiles: Uint8Array;
+  entities: DataView;
+  maxEntities: number;
+  tiles: DataView;
 
   constructor(private i: ModuleInterface) {}
 
@@ -29,23 +41,35 @@ export class WasmInterface {
   get tileSize(): number {
     return this.width * this.height;
   }
-  get px(): number {
-    return this.i.gPX.value;
-  }
-  get py(): number {
-    return this.i.gPY.value;
-  }
 
   private slice(start: number, length: number) {
-    return new Uint8Array(this.i.memory.buffer.slice(start, start + length));
+    return new DataView(this.i.memory.buffer, start, length);
   }
 
   draw(x: number, y: number, ch: string): void {
     return this.i.draw(x, y, ch.charCodeAt(0));
   }
 
+  entity(id: number): REntity {
+    const eSize = this.i.gEntitySize.value;
+    const offset = id * eSize;
+
+    return {
+      exists: this.entities.getUint8(offset) !== 0,
+      x: this.entities.getUint8(offset + 1),
+      y: this.entities.getUint8(offset + 2),
+      ch: this.entities.getUint8(offset + 3),
+      colour: this.entities.getUint32(offset + 4),
+    };
+  }
+
   initialise(width: number, height: number): void {
     this.i.initialise(width, height);
+    this.maxEntities = this.i.gMaxEntities.value;
+    this.entities = this.slice(
+      this.i.gEntities.value,
+      this.i.gEntitySize.value * this.maxEntities
+    );
     this.tiles = this.slice(this.i.gTiles.value, this.tileSize);
   }
 

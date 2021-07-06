@@ -4,13 +4,12 @@
   "description": "WASM rogue!",
   "main": "index.js",
   "scripts": {
-    "wasm:pp": "node --loader ts-node/esm src/build/preprocess.ts assembly/code.wat build/code.wat",
+    "wasm:pp": "ts-node src/build/preprocess.ts assembly/code.wat build/code.wat",
     "wasm:build": "wat2wasm build/code.wat -o build/code.wasm",
     "wasm:debug": "wat2wasm build/code.wat --debug-names -o build/code.wasm",
-    "wasm:watch": "node --loader ts-node/esm src/build/wasm-watch.ts",
+    "wasm:watch": "ts-node src/build/wasm-watch.ts",
     "rollup": "rollup -c",
-    "watch": "rollup -cw",
-    "serve": "serve public"
+    "watch": "rollup -cw"
   },
   "author": "Lag.Com <lagdotcom@gmail.com>",
   "license": "ISC",
@@ -20,7 +19,7 @@
     "@rollup/plugin-url": "^6.0.0",
     "@types/watch": "^1.0.2",
     "rollup": "^2.52.3",
-    "serve": "^12.0.0",
+    "rollup-plugin-serve": "^1.1.0",
     "ts-node": "^10.0.0",
     "wat2wasm": "^3.0.0",
     "watch": "^1.0.2"

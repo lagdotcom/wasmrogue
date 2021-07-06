@@ -1,25 +1,32 @@
 (module
-  (global $chSpace i32 [[eval ' ']])
-  (global $chWall i32 [[eval '#']])
-  (global $chDot i32 [[eval '.']])
+  (global $chSpace i32 [[= ' ']])
+  (global $chWall i32 [[= '#']])
+  (global $chDot i32 [[= '.']])
+  (global $chAt i32 [[= '@']])
 
-[[consts k 1000 Up Right Down Left]]
+  (global $cWhite i32 (i32.const 0xffffffff))
+  (global $cYellow i32 (i32.const 0xffffff00))
 
-[[consts act 0 None Move]]
+  [[consts k 1000 Up Right Down Left]]
 
+  [[consts act 0 None Move]]
+
+  (global $playerID (export "gPlayerID") (mut i32) (i32.const 0))
   (global $width (export "gWidth") (mut i32) (i32.const 0))
   (global $height (export "gHeight") (mut i32) (i32.const 0))
 
-[[struct NoneAction id:u8]]
-[[struct MoveAction id:u8 dx:s8 dy:s8]]
+  [[struct Entity exists:u8 x:u8 y:u8 ch:u8 colour:i32]]
+  (global $maxEntities (export "gMaxEntities") i32 (i32.const 256))
+  (global $entitySize (export "gEntitySize") i32 [[= sizeof_Entity]])
 
-[[reserve Action Math.max(sizeof_NoneAction,sizeof_MoveAction)]]
-[[reserve Tiles 100*100 gTiles]]
+  [[struct NoneAction id:u8]]
+  [[struct MoveAction id:u8 dx:s8 dy:s8]]
 
-  (global $px (export "gPX") (mut i32) (i32.const 0))
-  (global $py (export "gPY") (mut i32) (i32.const 0))
-
-[[memory memory]]
+  [[reserve Action Math.max(sizeof_NoneAction,sizeof_MoveAction)]]
+  [[align 8]]
+  [[reserve Entities maxEntities*sizeof_Entity gEntities]]
+  [[reserve Tiles 100*100 gTiles]]
+  [[memory memory]]
 
   (func $initialise (export "initialise") (param $w i32) (param $h i32)
     ;; (local $count i32)
@@ -33,9 +40,6 @@
 
     (global.set $width (local.get $w))
     (global.set $height (local.get $h))
-
-    (global.set $px (i32.div_u (local.get $w) (i32.const 2)))
-    (global.set $py (i32.div_u (local.get $h) (i32.const 2)))
 
     ;; (local.set $count (i32.mul
     ;;   (local.get $w)
@@ -76,6 +80,20 @@
         (local.get $h))
       )
     )
+
+    (call $initEntity (i32.const 0)
+      (i32.div_u (local.get $w) (i32.const 2))
+      (i32.div_u (local.get $h) (i32.const 2))
+      (global.get $chAt)
+      (global.get $cWhite)
+    )
+
+    (call $initEntity (i32.const 1)
+      (i32.sub (i32.div_u (local.get $w) (i32.const 2)) (i32.const 5))
+      (i32.div_u (local.get $h) (i32.const 2))
+      (global.get $chAt)
+      (global.get $cYellow)
+    )
   )
 
   (func $getTileXY (param $x i32) (param $y i32) (result i32)
@@ -99,9 +117,12 @@
   )
 
   (func $playerMove (export "playerMove") (param $mx i32) (param $my i32)
+    (local $mem i32)
+    (local.set $mem (call $getEntity (global.get $playerID)))
+
     ;; TODO walls etc.
-    (global.set $px (i32.add (global.get $px) (local.get $mx)))
-    (global.set $py (i32.add (global.get $py) (local.get $my)))
+    [[store $mem Entity.x (i32.add [[load $mem Entity.x]] (local.get $mx))]]
+    [[store $mem Entity.y (i32.add [[load $mem Entity.y]] (local.get $my))]]
   )
 
   (func $input (export "input") (param $ch i32) (result i32)
@@ -165,5 +186,23 @@
 
   (func $applyAction
     (call_indirect $actions [[load $memAction NoneAction.id]])
+  )
+
+  (func $getEntity (param $id i32) (result i32)
+    (i32.add
+      (global.get $memEntities)
+      (i32.mul (local.get $id) [[= sizeof_Entity]])
+    )
+  )
+
+  (func $initEntity (param $id i32) (param $x i32) (param $y i32) (param $ch i32) (param $colour i32)
+    (local $mem i32)
+    (local.set $mem (call $getEntity (local.get $id)))
+
+    [[store $mem Entity.exists 1]]
+    [[store $mem Entity.x $x]]
+    [[store $mem Entity.y $y]]
+    [[store $mem Entity.ch $ch]]
+    [[store $mem Entity.colour $colour]]
   )
 )
