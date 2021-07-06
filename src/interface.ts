@@ -1,17 +1,20 @@
 import module from "../build/code.wasm";
+import { range } from "./utils";
 
 interface ModuleInterface {
   gEntities: WebAssembly.Global;
   gEntitySize: WebAssembly.Global;
   gHeight: WebAssembly.Global;
+  gMap: WebAssembly.Global;
   gMaxEntities: WebAssembly.Global;
   gPlayerID: WebAssembly.Global;
-  gTiles: WebAssembly.Global;
+  gTileTypeCount: WebAssembly.Global;
+  gTileTypes: WebAssembly.Global;
+  gTileTypeSize: WebAssembly.Global;
   gWidth: WebAssembly.Global;
 
   memory: WebAssembly.Memory;
 
-  draw(x: number, y: number, ch: number): void;
   initialise(w: number, h: number): void;
   input(code: number): boolean;
   playerMove(mx: number, my: number): void;
@@ -25,10 +28,19 @@ export interface REntity {
   colour: number;
 }
 
+export interface RTileType {
+  walkable: boolean;
+  transparent: boolean;
+  ch: number;
+  fg: number;
+  bg: number;
+}
+
 export class WasmInterface {
   entities: DataView;
   maxEntities: number;
-  tiles: DataView;
+  map: DataView;
+  tileTypes: RTileType[];
 
   constructor(private i: ModuleInterface) {}
 
@@ -46,10 +58,6 @@ export class WasmInterface {
     return new DataView(this.i.memory.buffer, start, length);
   }
 
-  draw(x: number, y: number, ch: string): void {
-    return this.i.draw(x, y, ch.charCodeAt(0));
-  }
-
   entity(id: number): REntity {
     const eSize = this.i.gEntitySize.value;
     const offset = id * eSize;
@@ -63,6 +71,20 @@ export class WasmInterface {
     };
   }
 
+  private tt(id: number): RTileType {
+    const tSize = this.i.gTileTypeSize.value;
+    const offset = id * tSize;
+    const mem = this.slice(offset, tSize);
+
+    return {
+      walkable: mem.getUint8(0) !== 0,
+      transparent: mem.getUint8(1) !== 0,
+      ch: mem.getUint8(2),
+      fg: mem.getUint32(3),
+      bg: mem.getUint32(7),
+    };
+  }
+
   initialise(width: number, height: number): void {
     this.i.initialise(width, height);
     this.maxEntities = this.i.gMaxEntities.value;
@@ -70,7 +92,10 @@ export class WasmInterface {
       this.i.gEntities.value,
       this.i.gEntitySize.value * this.maxEntities
     );
-    this.tiles = this.slice(this.i.gTiles.value, this.tileSize);
+    this.map = this.slice(this.i.gMap.value, this.tileSize);
+    this.tileTypes = range(this.i.gTileTypeCount.value).map((id) =>
+      this.tt(id)
+    );
   }
 
   input(id: number): boolean {

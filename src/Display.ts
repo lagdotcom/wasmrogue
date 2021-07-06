@@ -1,32 +1,56 @@
+import { Keys, Terminal } from "wglt";
+
 import { REntity, WasmInterface } from "./interface";
+import { range } from "./utils";
+
+const keys = [Keys.VK_LEFT, Keys.VK_UP, Keys.VK_RIGHT, Keys.VK_DOWN];
 
 export default class Display {
-  e: HTMLTextAreaElement;
+  e: HTMLCanvasElement;
   w: number;
   h: number;
   entityIDs: number[];
   entities: REntity[];
+  term: Terminal;
   tiles: Uint8Array;
 
-  constructor(private i: WasmInterface) {
-    this.e = document.createElement("textarea");
-    this.e.cols = i.width + 2;
-    this.e.rows = i.height;
-    this.e.readOnly = true;
-
+  constructor(private i: WasmInterface, private container: HTMLElement) {
+    this.e = document.createElement("canvas");
     this.w = i.width;
     this.h = i.height;
 
-    document.body.append(this.e);
-    this.entityIDs = Array.from(Array(i.maxEntities).keys());
+    this.term = new Terminal(this.e, this.w, this.h);
+
+    container.append(this.e);
+    this.entityIDs = range(i.maxEntities);
     this.refresh();
+
+    this.term.update = this.update.bind(this);
+    this.e.focus();
   }
 
-  tile(x: number, y: number) {
-    const e = this.entities.filter((e) => e.x === x && e.y === y);
-    if (e.length) return String.fromCharCode(e[0].ch);
+  update() {
+    let k = 0;
 
-    return String.fromCharCode(this.tiles[y * this.w + x]);
+    for (let i = 0; i < keys.length; i++) {
+      const vk = keys[i];
+      if (this.term.isKeyPressed(vk)) {
+        k = vk;
+        break;
+      }
+    }
+
+    if (k && this.i.input(k)) this.refresh();
+  }
+
+  tile(x: number, y: number): [number, number, number] {
+    const id = this.tiles[y * this.w + x];
+    const tt = this.i.tileTypes[id];
+
+    const [e] = this.entities.filter((e) => e.x === x && e.y === y);
+    if (e) return [e.ch, e.colour, tt.bg];
+
+    return [tt.ch, tt.fg, tt.bg];
   }
 
   updateEntityList() {
@@ -37,26 +61,26 @@ export default class Display {
   }
 
   updateTiles() {
-    this.tiles = new Uint8Array(this.i.tiles.buffer, this.i.tiles.byteOffset);
+    this.tiles = new Uint8Array(this.i.map.buffer, this.i.map.byteOffset);
   }
 
   refresh() {
     this.updateEntityList();
     this.updateTiles();
-    this.e.value = this.render();
+    this.render();
   }
 
   private render() {
-    let s = "";
-    for (let y = 0; y < this.h; y++) {
-      s += "\n";
-      for (let x = 0; x < this.w; x++) {
-        const ch = this.tile(x, y);
+    const { term } = this;
 
-        s += ch;
+    // term.clear();
+
+    for (let y = 0; y < this.h; y++) {
+      for (let x = 0; x < this.w; x++) {
+        const [ch, fg, bg] = this.tile(x, y);
+
+        term.drawChar(x, y, ch, fg, bg);
       }
     }
-
-    return s.substr(1);
   }
 }

@@ -1,19 +1,31 @@
 (module
-  (global $chSpace i32 [[= ' ']])
-  (global $chWall i32 [[= '#']])
-  (global $chDot i32 [[= '.']])
   (global $chAt i32 [[= '@']])
 
-  (global $cWhite i32 (i32.const 0xffffffff))
-  (global $cYellow i32 (i32.const 0xffffff00))
+  (global $cWhite i32 (i32.const 0xffffff))
+  (global $cYellow i32 (i32.const 0x00ffff))
 
-  [[consts k 1000 Up Right Down Left]]
+  (global $kLeft i32 (i32.const 37))
+  (global $kUp i32 (i32.const 38))
+  (global $kRight i32 (i32.const 39))
+  (global $kDown i32 (i32.const 40))
 
   [[consts act 0 None Move]]
 
   (global $playerID (export "gPlayerID") (mut i32) (i32.const 0))
   (global $width (export "gWidth") (mut i32) (i32.const 0))
   (global $height (export "gHeight") (mut i32) (i32.const 0))
+
+  [[struct Tile walkable:u8 transparent:u8 ch:u8 fg:i32 bg:i32]]
+  [[reserve TileTypes sizeof_Tile*2 gTileTypes]]
+  [[align 8]]
+  (data $tileTypeData (offset [[= memTileTypes]])
+    ;; TODO - [[data Tile walkable=1 transparent=1 ch='.' fg=0xffffff bg=0x963232]]
+    "\01\01.\ff\ff\ff\00\32\32\96\00"
+    "\00\00#\ff\ff\ff\00\00\00\64\00"
+  )
+  [[consts tt 0 Floor Wall]]
+  (global $ttINVALID (export "gTileTypeCount") i32 [[= ttWall + 1]])
+  (global $tileTypeSize (export "gTileTypeSize") i32 [[= sizeof_Tile]])
 
   [[struct Entity exists:u8 x:u8 y:u8 ch:u8 colour:i32]]
   (global $maxEntities (export "gMaxEntities") i32 (i32.const 256))
@@ -25,7 +37,7 @@
   [[reserve Action Math.max(sizeof_NoneAction,sizeof_MoveAction)]]
   [[align 8]]
   [[reserve Entities maxEntities*sizeof_Entity gEntities]]
-  [[reserve Tiles 100*100 gTiles]]
+  [[reserve Map 100*100 gMap]]
   [[memory memory]]
 
   (func $initialise (export "initialise") (param $w i32) (param $h i32)
@@ -49,7 +61,7 @@
     (local.set $lastX (i32.sub (local.get $w) (i32.const 1)))
     (local.set $lastY (i32.sub (local.get $h) (i32.const 1)))
 
-    (local.set $i (global.get $memTiles))
+    (local.set $i (global.get $memMap))
     (local.set $y (i32.const 0))
     (loop $loopY
       (local.set $x (i32.const 0))
@@ -64,8 +76,8 @@
             (i32.eq (local.get $y) (local.get $lastY))
           )
         )
-          (then (i32.store8 (local.get $i) (global.get $chWall)))
-          (else (i32.store8 (local.get $i) (global.get $chDot)))
+          (then (i32.store8 (local.get $i) (global.get $ttWall)))
+          (else (i32.store8 (local.get $i) (global.get $ttFloor)))
         )
 
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
@@ -108,12 +120,8 @@
           (local.get $x)
         )
       )
-      (global.get $memTiles)
+      (global.get $memMap)
     )
-  )
-
-  (func $draw (export "draw") (param $x i32) (param $y i32) (param $ch i32)
-    (i32.store8 (call $getTileXY (local.get $x) (local.get $y)) (local.get $ch))
   )
 
   (func $playerMove (export "playerMove") (param $mx i32) (param $my i32)

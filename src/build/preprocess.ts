@@ -153,12 +153,13 @@ class Preprocessor {
     const processed = [];
 
     code.split("\n").forEach((line, ln) => {
+      let e = undefined;
       while (true) {
-        const i = line.lastIndexOf("[[");
+        const i = line.lastIndexOf("[[", e);
         if (i < 0) break;
 
         const j = line.indexOf("]]", i);
-        if (j < 0) throw new Error(`Line ${ln}: [[ without ]]`);
+        if (j < 0) throw new Error(`Line ${ln + 1}: [[ without ]]`);
 
         const old = line.slice(i, j + 2);
         const command = old.slice(2, -2).trim();
@@ -168,7 +169,8 @@ class Preprocessor {
           const repl = this.processors[p](...args) || "";
           line = line.slice(0, i) + repl + line.slice(j + 2);
         } else {
-          console.warn(`ignored unknown processor: ${p}`);
+          console.warn(`Line ${ln + 1}: ignored unknown processor: ${p}`);
+          e = i - 1;
         }
       }
 
