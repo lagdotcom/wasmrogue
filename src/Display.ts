@@ -1,39 +1,86 @@
-import { WasmInterface } from "./interface";
+import { Keys, Terminal } from "wglt";
+
+import { REntity, WasmInterface } from "./interface";
+import { range } from "./utils";
+
+const keys = [Keys.VK_LEFT, Keys.VK_UP, Keys.VK_RIGHT, Keys.VK_DOWN];
 
 export default class Display {
-  e: HTMLTextAreaElement;
+  e: HTMLCanvasElement;
   w: number;
   h: number;
+  entityIDs: number[];
+  entities: REntity[];
+  term: Terminal;
+  tiles: Uint8Array;
 
-  constructor(private i: WasmInterface) {
-    this.e = document.createElement("textarea");
-    this.e.cols = i.width + 2;
-    this.e.rows = i.height;
-    this.e.readOnly = true;
-
+  constructor(private i: WasmInterface, private container: HTMLElement) {
+    this.e = document.createElement("canvas");
     this.w = i.width;
     this.h = i.height;
 
-    document.body.append(this.e);
+    this.term = new Terminal(this.e, this.w, this.h);
+
+    container.append(this.e);
+    this.entityIDs = range(i.maxEntities);
     this.refresh();
+
+    this.term.update = this.update.bind(this);
+    this.e.focus();
   }
 
-  tile(x: number, y: number) {
-    if (x === this.i.px && y === this.i.py) return "@";
-    return String.fromCharCode(this.i.tiles[y * this.w + x]);
-  }
+  update() {
+    let k = 0;
 
-  refresh() {
-    let s = "";
-    for (let y = 0; y < this.h; y++) {
-      s += "\n";
-      for (let x = 0; x < this.w; x++) {
-        const ch = this.tile(x, y);
-
-        s += ch;
+    for (let i = 0; i < keys.length; i++) {
+      const vk = keys[i];
+      if (this.term.isKeyPressed(vk)) {
+        k = vk;
+        break;
       }
     }
 
-    this.e.value = s.substr(1);
+    if (k && this.i.input(k)) this.refresh();
+  }
+
+  tile(x: number, y: number): [number, number, number] {
+    const id = this.tiles[y * this.w + x];
+    const tt = this.i.tileTypes[id];
+
+    const [e] = this.entities.filter((e) => e.x === x && e.y === y);
+    if (e) return [e.ch, e.colour, tt.bg];
+
+    return [tt.ch, tt.fg, tt.bg];
+  }
+
+  updateEntityList() {
+    // TODO: is this good? lol
+    this.entities = this.entityIDs
+      .map((id) => this.i.entity(id))
+      .filter((e) => e.exists);
+  }
+
+  updateTiles() {
+    this.tiles = new Uint8Array(this.i.map.buffer, this.i.map.byteOffset);
+  }
+
+  refresh() {
+    this.updateEntityList();
+    this.updateTiles();
+    this.render();
+  }
+
+  private render() {
+    const { term } = this;
+
+    // term.clear();
+
+    for (let y = 0; y < this.h; y++) {
+      for (let x = 0; x < this.w; x++) {
+        const [ch, fg, bg] = this.tile(x, y);
+
+        term.drawChar(x, y, ch, fg, bg);
+      }
+    }
   }
 }

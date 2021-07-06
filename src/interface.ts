@@ -1,21 +1,47 @@
 import module from "../build/code.wasm";
+import { range } from "./utils";
 
 interface ModuleInterface {
+  gEntities: WebAssembly.Global;
+  gEntitySize: WebAssembly.Global;
   gHeight: WebAssembly.Global;
+  gMap: WebAssembly.Global;
+  gMaxEntities: WebAssembly.Global;
+  gPlayerID: WebAssembly.Global;
+  gTileTypeCount: WebAssembly.Global;
+  gTileTypes: WebAssembly.Global;
+  gTileTypeSize: WebAssembly.Global;
   gWidth: WebAssembly.Global;
-  gTiles: WebAssembly.Global;
-  gPX: WebAssembly.Global;
-  gPY: WebAssembly.Global;
 
   memory: WebAssembly.Memory;
 
-  draw(x: number, y: number, ch: number): void;
   initialise(w: number, h: number): void;
   input(code: number): boolean;
   playerMove(mx: number, my: number): void;
 }
 
+export interface REntity {
+  exists: boolean;
+  x: number;
+  y: number;
+  ch: number;
+  colour: number;
+}
+
+export interface RTileType {
+  walkable: boolean;
+  transparent: boolean;
+  ch: number;
+  fg: number;
+  bg: number;
+}
+
 export class WasmInterface {
+  entities: DataView;
+  maxEntities: number;
+  map: DataView;
+  tileTypes: RTileType[];
+
   constructor(private i: ModuleInterface) {}
 
   get width(): number {
@@ -27,25 +53,49 @@ export class WasmInterface {
   get tileSize(): number {
     return this.width * this.height;
   }
-  get px(): number {
-    return this.i.gPX.value;
-  }
-  get py(): number {
-    return this.i.gPY.value;
+
+  private slice(start: number, length: number) {
+    return new DataView(this.i.memory.buffer, start, length);
   }
 
-  get tiles() {
-    return new Uint8Array(
-      this.i.memory.buffer.slice(this.i.gTiles.value, this.tileSize)
-    );
+  entity(id: number): REntity {
+    const eSize = this.i.gEntitySize.value;
+    const offset = id * eSize;
+
+    return {
+      exists: this.entities.getUint8(offset) !== 0,
+      x: this.entities.getUint8(offset + 1),
+      y: this.entities.getUint8(offset + 2),
+      ch: this.entities.getUint8(offset + 3),
+      colour: this.entities.getUint32(offset + 4),
+    };
   }
 
-  draw(x: number, y: number, ch: string): void {
-    return this.i.draw(x, y, ch.charCodeAt(0));
+  private tt(id: number): RTileType {
+    const tSize = this.i.gTileTypeSize.value;
+    const offset = id * tSize;
+    const mem = this.slice(offset, tSize);
+
+    return {
+      walkable: mem.getUint8(0) !== 0,
+      transparent: mem.getUint8(1) !== 0,
+      ch: mem.getUint8(2),
+      fg: mem.getUint32(3),
+      bg: mem.getUint32(7),
+    };
   }
 
   initialise(width: number, height: number): void {
-    return this.i.initialise(width, height);
+    this.i.initialise(width, height);
+    this.maxEntities = this.i.gMaxEntities.value;
+    this.entities = this.slice(
+      this.i.gEntities.value,
+      this.i.gEntitySize.value * this.maxEntities
+    );
+    this.map = this.slice(this.i.gMap.value, this.tileSize);
+    this.tileTypes = range(this.i.gTileTypeCount.value).map((id) =>
+      this.tt(id)
+    );
   }
 
   input(id: number): boolean {

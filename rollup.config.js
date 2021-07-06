@@ -1,4 +1,6 @@
 import { nodeResolve } from "@rollup/plugin-node-resolve";
+import commonjs from "@rollup/plugin-commonjs";
+import serve from "rollup-plugin-serve";
 import typescript from "@rollup/plugin-typescript";
 import url from "@rollup/plugin-url";
 
@@ -10,8 +12,10 @@ export default {
     format: "iife",
   },
   plugins: [
-    url({ fileName:'[name][extname]', include: ["**/*.wasm"], limit: 1 }),
+    commonjs(),
+    url({ fileName: "[name][extname]", include: ["**/*.wasm"], limit: 1 }),
     typescript(),
     nodeResolve(),
+    serve({ contentBase: "public", open: true }),
   ],
 };

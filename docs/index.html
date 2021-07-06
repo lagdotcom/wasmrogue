@@ -8,18 +8,17 @@ html,body {
   padding: 0;
   background-color: black;
 }
-textarea {
-  display: block;
-  border: 0;
-  margin: 0 auto;
-  padding: 0;
-  color: lime;
-  background-color: black;
-  resize: none;
+#container {
+  display: flex;
+  flex-direction: column;
+  place-content: center;
+  width: 100%;
+  height: 100vh;
 }
     </style>
   </head>
   <body>
     <script src="bundle.js"></script>
+    <div id="container"></div>
   </body>
 </html>
