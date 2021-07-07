@@ -55,7 +55,7 @@
             return [tt.ch, tt.fg, tt.bg];
         }
         updateEntityList() {
-            // TODO: is this good? lol
+            // TODO is this good? lol
             this.entities = this.entityIDs
                 .map((id) => this.i.entity(id))
                 .filter((e) => e.exists);
@@ -111,7 +111,7 @@
                 x: this.entities.getUint8(offset + 1),
                 y: this.entities.getUint8(offset + 2),
                 ch: this.entities.getUint8(offset + 3),
-                colour: this.entities.getUint32(offset + 4),
+                colour: this.entities.getUint32(offset + 4, true),
             };
         }
         tt(id) {
@@ -122,8 +122,8 @@
                 walkable: mem.getUint8(0) !== 0,
                 transparent: mem.getUint8(1) !== 0,
                 ch: mem.getUint8(2),
-                fg: mem.getUint32(3),
-                bg: mem.getUint32(7),
+                fg: mem.getUint32(3, true),
+                bg: mem.getUint32(7, true),
             };
         }
         initialise(width, height) {
@@ -142,7 +142,7 @@
     getInterface().then((i) => {
         const container = document.getElementById("container");
         window.i = i;
-        i.initialise(80, 50);
+        i.initialise(60, 40);
         const d = new Display(i, container);
         window.d = d;
     });
