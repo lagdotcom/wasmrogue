@@ -1,8 +1,8 @@
 (module
   (global $chAt i32 [[= '@']])
 
-  (global $cWhite i32 (i32.const 0xffffff))
-  (global $cYellow i32 (i32.const 0x00ffff))
+  (global $cWhite i32 (i32.const 0xffffff00))
+  (global $cYellow i32 (i32.const 0xffff0000))
 
   (global $kLeft i32 (i32.const 37))
   (global $kUp i32 (i32.const 38))
@@ -19,9 +19,8 @@
   [[reserve TileTypes sizeof_Tile*2 gTileTypes]]
   [[align 8]]
   (data $tileTypeData (offset [[= memTileTypes]])
-    ;; TODO - [[data Tile walkable=1 transparent=1 ch='.' fg=0xffffff bg=0x963232]]
-    "\01\01.\ff\ff\ff\00\32\32\96\00"
-    "\00\00#\ff\ff\ff\00\00\00\64\00"
+    [[data Tile walkable=1 transparent=1 ch='.' fg=0xffffff00 bg=0x32329600]]
+    [[data Tile ch='#' fg=0xffffff00 bg=0x00006400]]
   )
   [[consts tt 0 Floor Wall]]
   (global $ttINVALID (export "gTileTypeCount") i32 [[= ttWall + 1]])
