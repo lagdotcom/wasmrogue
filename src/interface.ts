@@ -17,7 +17,7 @@ interface ModuleInterface {
 
   initialise(w: number, h: number): void;
   input(code: number): boolean;
-  playerMove(mx: number, my: number): void;
+  moveEntity(eid: number, mx: number, my: number): void;
 }
 
 export interface REntity {

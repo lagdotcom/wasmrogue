@@ -45,7 +45,7 @@
     (local $lastX i32)
     (local $lastY i32)
 
-    ;; TODO: check $w * $h < sizeof_Tiles
+    ;; TODO check $w * $h < sizeof_Map
 
     (global.set $width (local.get $w))
     (global.set $height (local.get $h))
@@ -90,7 +90,7 @@
       )
     )
 
-    (call $initEntity (i32.const 0)
+    (call $initEntity (global.get $playerID)
       (i32.div_u (local.get $w) (i32.const 2))
       (i32.div_u (local.get $h) (i32.const 2))
       (global.get $chAt)
@@ -132,16 +132,32 @@
     [[load (call $getTileType (i32.load8_u (call $getTileXY (local.get $x) (local.get $y)))) Tile.walkable]]
   )
 
-  (func $playerMove (export "playerMove") (param $mx i32) (param $my i32)
+  (func $isInBounds (param $x i32) (param $y i32) (result i32)
+    (i32.and
+      (i32.and
+        (i32.ge_s (local.get $x) (i32.const 0))
+        (i32.lt_s (local.get $x) (global.get $width))
+      )
+      (i32.and
+        (i32.ge_s (local.get $y) (i32.const 0))
+        (i32.lt_s (local.get $y) (global.get $height))
+      )
+    )
+  )
+
+  (func $moveEntity (export "moveEntity") (param $eid i32) (param $mx i32) (param $my i32)
     (local $mem i32)
     (local $x i32)
     (local $y i32)
 
-    (local.set $mem (call $getEntity (global.get $playerID)))
+    (local.set $mem (call $getEntity (local.get $eid)))
 
-    (if (call $isWalkable
-      (local.tee $x (i32.add [[load $mem Entity.x]] (local.get $mx)))
-      (local.tee $y (i32.add [[load $mem Entity.y]] (local.get $my)))
+    (if (i32.and
+      (call $isWalkable
+        (local.tee $x (i32.add [[load $mem Entity.x]] (local.get $mx)))
+        (local.tee $y (i32.add [[load $mem Entity.y]] (local.get $my)))
+      )
+      (call $isInBounds (local.get $x) (local.get $y))
     )
       (then
         [[store $mem Entity.x $x]]
@@ -166,7 +182,9 @@
   (func $applyNoAction)
 
   (func $applyMoveAction
-    (call $playerMove
+    (call $moveEntity
+      ;; TODO allow actions on arbitrary entities!
+      (global.get $playerID)
       [[load $memAction MoveAction.dx]]
       [[load $memAction MoveAction.dy]]
     )

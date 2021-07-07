@@ -175,7 +175,7 @@ class Preprocessor {
   }
 
   private define<T>(name: string, value: T): [string, T] {
-    // TODO: this defines [[consts]] stuff twice
+    // TODO this defines [[consts]] stuff twice
     // console.log("define:", name, value);
     this.env[name] = value;
     return [name, value];
