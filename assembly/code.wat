@@ -9,8 +9,6 @@
   (global $kRight i32 (i32.const 39))
   (global $kDown i32 (i32.const 40))
 
-  [[consts act 0 None Move]]
-
   (global $playerID (export "gPlayerID") (mut i32) (i32.const 0))
   (global $width (export "gWidth") (mut i32) (i32.const 0))
   (global $height (export "gHeight") (mut i32) (i32.const 0))
@@ -23,7 +21,7 @@
     [[data Tile ch='#' fg=0xffffff00 bg=0x00006400]]
   )
   [[consts tt 0 Floor Wall]]
-  (global $ttINVALID (export "gTileTypeCount") i32 [[= ttWall + 1]])
+  (global $ttINVALID (export "gTileTypeCount") i32 [[= _Next]])
   (global $tileTypeSize (export "gTileTypeSize") i32 [[= sizeof_Tile]])
 
   [[struct Entity exists:u8 x:u8 y:u8 ch:u8 colour:i32]]
@@ -109,27 +107,47 @@
 
   (func $getTileXY (param $x i32) (param $y i32) (result i32)
     (i32.add
+      (global.get $memMap)
       (i32.add
         (i32.mul
           (global.get $width)
           (local.get $y)
         )
-        (i32.mul
-          (i32.const 1)
-          (local.get $x)
-        )
+        (local.get $x)
       )
-      (global.get $memMap)
     )
+  )
+
+  (func $getTileType (param $id i32) (result i32)
+    (i32.add
+      (global.get $memTileTypes)
+      (i32.mul
+        (local.get $id)
+        [[= sizeof_Tile]]
+      )
+    )
+  )
+
+  (func $isWalkable (param $x i32) (param $y i32) (result i32)
+    [[load (call $getTileType (i32.load8_u (call $getTileXY (local.get $x) (local.get $y)))) Tile.walkable]]
   )
 
   (func $playerMove (export "playerMove") (param $mx i32) (param $my i32)
     (local $mem i32)
+    (local $x i32)
+    (local $y i32)
+
     (local.set $mem (call $getEntity (global.get $playerID)))
 
-    ;; TODO walls etc.
-    [[store $mem Entity.x (i32.add [[load $mem Entity.x]] (local.get $mx))]]
-    [[store $mem Entity.y (i32.add [[load $mem Entity.y]] (local.get $my))]]
+    (if (call $isWalkable
+      (local.tee $x (i32.add [[load $mem Entity.x]] (local.get $mx)))
+      (local.tee $y (i32.add [[load $mem Entity.y]] (local.get $my)))
+    )
+      (then
+        [[store $mem Entity.x $x]]
+        [[store $mem Entity.y $y]]
+      )
+    )
   )
 
   (func $input (export "input") (param $ch i32) (result i32)
@@ -137,6 +155,25 @@
     (call $applyAction)
 
     [[load $memAction NoneAction.id]]
+  )
+
+  (table $actions anyfunc (elem
+    $applyNoAction
+    $applyMoveAction
+  ))
+  [[consts act 0 None Move]]
+
+  (func $applyNoAction)
+
+  (func $applyMoveAction
+    (call $playerMove
+      [[load $memAction MoveAction.dx]]
+      [[load $memAction MoveAction.dy]]
+    )
+  )
+
+  (func $applyAction
+    (call_indirect $actions [[load $memAction NoneAction.id]])
   )
 
   (func $convertToAction (param $ch i32)
@@ -176,23 +213,6 @@
         (return)
       ))
     )
-  )
-
-  (table $actions anyfunc (elem
-    $applyNoAction
-    $applyMoveAction
-  ))
-
-  (func $applyNoAction)
-
-  (func $applyMoveAction
-    [[load $memAction MoveAction.dx]]
-    [[load $memAction MoveAction.dy]]
-    (call $playerMove)
-  )
-
-  (func $applyAction
-    (call_indirect $actions [[load $memAction NoneAction.id]])
   )
 
   (func $getEntity (param $id i32) (result i32)

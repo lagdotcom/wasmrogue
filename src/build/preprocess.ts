@@ -72,6 +72,33 @@ function watSplit(code: string): WatThing[] {
   return Array.isArray(result) ? result : [result];
 }
 
+function ppSplit(code: string): string[] {
+  const parts: string[] = [];
+  let current = "";
+  let depth = 0;
+
+  for (let i = 0; i < code.length; i++) {
+    const ch = code[i];
+
+    if (depth) {
+      if (ch === "(") depth++;
+      else if (ch === ")") depth--;
+    } else {
+      if (ch === "(") depth++;
+      else if (ch === " ") {
+        if (current) parts.push(current);
+        current = "";
+        continue;
+      }
+    }
+
+    current += ch;
+  }
+
+  if (current) parts.push(current);
+  return parts;
+}
+
 type Processor = (...args: string[]) => string;
 interface StructureField {
   name: string;
@@ -170,7 +197,7 @@ class Preprocessor {
         const old = line.slice(i, j + 2);
         const command = old.slice(2, -2).trim();
 
-        const [p, ...args] = command.split(" ");
+        const [p, ...args] = ppSplit(command);
         if (this.processors[p]) {
           const repl = this.processors[p](...args) || "";
           line = line.slice(0, i) + repl + line.slice(j + 2);
@@ -250,6 +277,7 @@ class Preprocessor {
     return names
       .map((n, i) => {
         const [name, value] = this.define(prefix + n, start + i);
+        this.define("_Next", value + 1);
         return ` (global $${name} i32 (i32.const ${value}))`;
       })
       .join("\n");

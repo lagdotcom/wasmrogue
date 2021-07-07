@@ -9,6 +9,28 @@ It's a roguelike (made during [r/roguelikedev does the complete roguelike tutori
 
 ## Technical Stuff
 
+### Preprocessor
+
+The preprocessor (`src/build/preprocess.ts`) tries to be reasonably intelligent about how it transforms and understands the underlying WASM:
+
+- `(global)` either defines a constant or a global variable.
+- `(local)` and `(param)` define local variables.
+- `(func)` forgets all defined local variables.
+
+Preprocessor commands:
+
+- `[[eval expression]]` runs `expression` in JavaScript and returns the result as `(i32.const whatever)`. Also aliased as `[[= ]]`.
+- `[[consts prefix start names...]]` defines an enumerated set of `(global)`s. It also defines `_Next` as one higher than the largest defined constant.
+- `[[struct name field:type...]]` defines a memory structure. It also defines `sizeof_name`.
+- `[[reserve name amount export]]` saves the position of the data pointer in a `(global)` then moves the data pointer `amount` ahead. `export` is optional.
+- `[[align size]]` aligns the data pointer with the given size, or 4.
+- `[[data struct field=value...]]` constructs a string representing the given `struct` with its values filled in. Useful in `(data)`s.
+- `[[memory export]]` defines a `(memory)` big enough to fit all reserved space. `export` is optional.
+- `[[load pointer struct.field]]` reads a structure field using `pointer` as the start of the structure.
+- `[[store pointer struct.field value]]` writes a structure field using `pointer` as the start of the structure.
+
+The preprocessor's parsing mechanism is custom and weird. It shouldn't get in the way. It's okay to put commands inside other commands. It's also okay to put WASM code as command arguments, at least sometimes.
+
 ### Memory Layout
 
 My memory layout is dynamic because my preprocessor handles most of it. Here's what is in the current build:
@@ -33,11 +55,11 @@ The equivalent of the tutorial's Action subclasses are stored like this:
 
 ## Log
 
-### 2021-06-07
+### 2021-07-07
 
 Fixed my parser but I'm not using it yet. Instead, looked at part 2 of the tutorial and implemented a few things. I also saw [this post](https://old.reddit.com/r/roguelikedev/comments/odulc3/update_wglt_is_blazing_fast_for_drawing_ascii_in/) and decided to use it. Might even be able to give the engine a direct memory access somehow! Anyway, I don't have an ECS yet. Will have to fix before I get too far into the tutorial.
 
-### 2021-06-06
+### 2021-07-06
 
 Spent hours today trying to write my own programming language parser and failing.
 
