@@ -4,6 +4,11 @@ import scopedEval from "./scoped-eval";
 
 const WASMPageSize = 0x10000;
 
+function hex2(n: number) {
+  const h = n.toString(16);
+  return h.length < 2 ? "0" + h : h;
+}
+
 function genExport(name?: string) {
   if (!name) return "";
   return ` (export "${name}")`;
@@ -67,6 +72,33 @@ function watSplit(code: string): WatThing[] {
   return Array.isArray(result) ? result : [result];
 }
 
+function ppSplit(code: string): string[] {
+  const parts: string[] = [];
+  let current = "";
+  let depth = 0;
+
+  for (let i = 0; i < code.length; i++) {
+    const ch = code[i];
+
+    if (depth) {
+      if (ch === "(") depth++;
+      else if (ch === ")") depth--;
+    } else {
+      if (ch === "(") depth++;
+      else if (ch === " ") {
+        if (current) parts.push(current);
+        current = "";
+        continue;
+      }
+    }
+
+    current += ch;
+  }
+
+  if (current) parts.push(current);
+  return parts;
+}
+
 type Processor = (...args: string[]) => string;
 interface StructureField {
   name: string;
@@ -94,6 +126,7 @@ class Preprocessor {
       "=": this.evaluate.bind(this),
       align: this.align.bind(this),
       consts: this.consts.bind(this),
+      data: this.data.bind(this),
       eval: this.evaluate.bind(this),
       load: this.load.bind(this),
       memory: this.memory.bind(this),
@@ -142,7 +175,7 @@ class Preprocessor {
   }
 
   private define<T>(name: string, value: T): [string, T] {
-    // TODO: this defines [[consts]] stuff twice
+    // TODO this defines [[consts]] stuff twice
     // console.log("define:", name, value);
     this.env[name] = value;
     return [name, value];
@@ -164,7 +197,7 @@ class Preprocessor {
         const old = line.slice(i, j + 2);
         const command = old.slice(2, -2).trim();
 
-        const [p, ...args] = command.split(" ");
+        const [p, ...args] = ppSplit(command);
         if (this.processors[p]) {
           const repl = this.processors[p](...args) || "";
           line = line.slice(0, i) + repl + line.slice(j + 2);
@@ -244,6 +277,7 @@ class Preprocessor {
     return names
       .map((n, i) => {
         const [name, value] = this.define(prefix + n, start + i);
+        this.define("_Next", value + 1);
         return ` (global $${name} i32 (i32.const ${value}))`;
       })
       .join("\n");
@@ -329,6 +363,57 @@ class Preprocessor {
       this.ptr += size - offset;
       return `;; aligned to ${size} bytes`;
     }
+  }
+
+  data(name: string, ...fields: string[]) {
+    const s = this.structures[name];
+    if (!s) throw new Error(`Unknown structure: ${name}`);
+
+    const fieldNames = Object.keys(s.fields);
+    const data: Record<string, number> = Object.fromEntries(
+      fieldNames.map((name) => [name, 0])
+    );
+    fields.forEach((fstring) => {
+      const [fname, fvalue] = fstring.split("=");
+      const f = s.fields[fname];
+      if (!f) throw new Error(`Unknown structure field: ${name}.${fname}`);
+
+      const value = this.evalNumber(fvalue);
+      data[fname] = value;
+    });
+
+    // console.log(data);
+    const size = this.env["sizeof_" + name] as number;
+    const buffer = new ArrayBuffer(size);
+    const view = new DataView(buffer);
+    let offset = 0;
+    fieldNames.forEach((fname) => {
+      const f = s.fields[fname];
+      const value = data[fname];
+
+      switch (f.type) {
+        case "u8":
+        case "i8":
+          view.setUint8(offset, value);
+          offset++;
+          break;
+
+        case "i32":
+          view.setInt32(offset, value, true);
+          offset += 4;
+          break;
+
+        default:
+          throw new Error(`Don't know how to write ${f.type}`);
+      }
+    });
+
+    let dataString = "";
+    for (let i = 0; i < size; i++) {
+      const b = view.getUint8(i);
+      dataString += `\\${hex2(b)}`;
+    }
+    return '"' + dataString + '"';
   }
 }
 

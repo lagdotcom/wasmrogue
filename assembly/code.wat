@@ -1,15 +1,13 @@
 (module
   (global $chAt i32 [[= '@']])
 
-  (global $cWhite i32 (i32.const 0xffffff))
-  (global $cYellow i32 (i32.const 0x00ffff))
+  (global $cWhite i32 (i32.const 0xffffff00))
+  (global $cYellow i32 (i32.const 0xffff0000))
 
   (global $kLeft i32 (i32.const 37))
   (global $kUp i32 (i32.const 38))
   (global $kRight i32 (i32.const 39))
   (global $kDown i32 (i32.const 40))
-
-  [[consts act 0 None Move]]
 
   (global $playerID (export "gPlayerID") (mut i32) (i32.const 0))
   (global $width (export "gWidth") (mut i32) (i32.const 0))
@@ -19,12 +17,11 @@
   [[reserve TileTypes sizeof_Tile*2 gTileTypes]]
   [[align 8]]
   (data $tileTypeData (offset [[= memTileTypes]])
-    ;; TODO - [[data Tile walkable=1 transparent=1 ch='.' fg=0xffffff bg=0x963232]]
-    "\01\01.\ff\ff\ff\00\32\32\96\00"
-    "\00\00#\ff\ff\ff\00\00\00\64\00"
+    [[data Tile walkable=1 transparent=1 ch='.' fg=0xffffff00 bg=0x32329600]]
+    [[data Tile ch='#' fg=0xffffff00 bg=0x00006400]]
   )
   [[consts tt 0 Floor Wall]]
-  (global $ttINVALID (export "gTileTypeCount") i32 [[= ttWall + 1]])
+  (global $ttINVALID (export "gTileTypeCount") i32 [[= _Next]])
   (global $tileTypeSize (export "gTileTypeSize") i32 [[= sizeof_Tile]])
 
   [[struct Entity exists:u8 x:u8 y:u8 ch:u8 colour:i32]]
@@ -48,7 +45,7 @@
     (local $lastX i32)
     (local $lastY i32)
 
-    ;; TODO: check $w * $h < sizeof_Tiles
+    ;; TODO check $w * $h < sizeof_Map
 
     (global.set $width (local.get $w))
     (global.set $height (local.get $h))
@@ -93,7 +90,7 @@
       )
     )
 
-    (call $initEntity (i32.const 0)
+    (call $initEntity (global.get $playerID)
       (i32.div_u (local.get $w) (i32.const 2))
       (i32.div_u (local.get $h) (i32.const 2))
       (global.get $chAt)
@@ -110,27 +107,63 @@
 
   (func $getTileXY (param $x i32) (param $y i32) (result i32)
     (i32.add
+      (global.get $memMap)
       (i32.add
         (i32.mul
           (global.get $width)
           (local.get $y)
         )
-        (i32.mul
-          (i32.const 1)
-          (local.get $x)
-        )
+        (local.get $x)
       )
-      (global.get $memMap)
     )
   )
 
-  (func $playerMove (export "playerMove") (param $mx i32) (param $my i32)
-    (local $mem i32)
-    (local.set $mem (call $getEntity (global.get $playerID)))
+  (func $getTileType (param $id i32) (result i32)
+    (i32.add
+      (global.get $memTileTypes)
+      (i32.mul
+        (local.get $id)
+        [[= sizeof_Tile]]
+      )
+    )
+  )
 
-    ;; TODO walls etc.
-    [[store $mem Entity.x (i32.add [[load $mem Entity.x]] (local.get $mx))]]
-    [[store $mem Entity.y (i32.add [[load $mem Entity.y]] (local.get $my))]]
+  (func $isWalkable (param $x i32) (param $y i32) (result i32)
+    [[load (call $getTileType (i32.load8_u (call $getTileXY (local.get $x) (local.get $y)))) Tile.walkable]]
+  )
+
+  (func $isInBounds (param $x i32) (param $y i32) (result i32)
+    (i32.and
+      (i32.and
+        (i32.ge_s (local.get $x) (i32.const 0))
+        (i32.lt_s (local.get $x) (global.get $width))
+      )
+      (i32.and
+        (i32.ge_s (local.get $y) (i32.const 0))
+        (i32.lt_s (local.get $y) (global.get $height))
+      )
+    )
+  )
+
+  (func $moveEntity (export "moveEntity") (param $eid i32) (param $mx i32) (param $my i32)
+    (local $mem i32)
+    (local $x i32)
+    (local $y i32)
+
+    (local.set $mem (call $getEntity (local.get $eid)))
+
+    (if (i32.and
+      (call $isWalkable
+        (local.tee $x (i32.add [[load $mem Entity.x]] (local.get $mx)))
+        (local.tee $y (i32.add [[load $mem Entity.y]] (local.get $my)))
+      )
+      (call $isInBounds (local.get $x) (local.get $y))
+    )
+      (then
+        [[store $mem Entity.x $x]]
+        [[store $mem Entity.y $y]]
+      )
+    )
   )
 
   (func $input (export "input") (param $ch i32) (result i32)
@@ -138,6 +171,27 @@
     (call $applyAction)
 
     [[load $memAction NoneAction.id]]
+  )
+
+  (table $actions anyfunc (elem
+    $applyNoAction
+    $applyMoveAction
+  ))
+  [[consts act 0 None Move]]
+
+  (func $applyNoAction)
+
+  (func $applyMoveAction
+    (call $moveEntity
+      ;; TODO allow actions on arbitrary entities!
+      (global.get $playerID)
+      [[load $memAction MoveAction.dx]]
+      [[load $memAction MoveAction.dy]]
+    )
+  )
+
+  (func $applyAction
+    (call_indirect $actions [[load $memAction NoneAction.id]])
   )
 
   (func $convertToAction (param $ch i32)
@@ -177,23 +231,6 @@
         (return)
       ))
     )
-  )
-
-  (table $actions anyfunc (elem
-    $applyNoAction
-    $applyMoveAction
-  ))
-
-  (func $applyNoAction)
-
-  (func $applyMoveAction
-    [[load $memAction MoveAction.dx]]
-    [[load $memAction MoveAction.dy]]
-    (call $playerMove)
-  )
-
-  (func $applyAction
-    (call_indirect $actions [[load $memAction NoneAction.id]])
   )
 
   (func $getEntity (param $id i32) (result i32)

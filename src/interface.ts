@@ -17,7 +17,7 @@ interface ModuleInterface {
 
   initialise(w: number, h: number): void;
   input(code: number): boolean;
-  playerMove(mx: number, my: number): void;
+  moveEntity(eid: number, mx: number, my: number): void;
 }
 
 export interface REntity {
@@ -67,7 +67,7 @@ export class WasmInterface {
       x: this.entities.getUint8(offset + 1),
       y: this.entities.getUint8(offset + 2),
       ch: this.entities.getUint8(offset + 3),
-      colour: this.entities.getUint32(offset + 4),
+      colour: this.entities.getUint32(offset + 4, true),
     };
   }
 
@@ -80,8 +80,8 @@ export class WasmInterface {
       walkable: mem.getUint8(0) !== 0,
       transparent: mem.getUint8(1) !== 0,
       ch: mem.getUint8(2),
-      fg: mem.getUint32(3),
-      bg: mem.getUint32(7),
+      fg: mem.getUint32(3, true),
+      bg: mem.getUint32(7, true),
     };
   }
 

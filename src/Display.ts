@@ -54,7 +54,7 @@ export default class Display {
   }
 
   updateEntityList() {
-    // TODO: is this good? lol
+    // TODO is this good? lol
     this.entities = this.entityIDs
       .map((id) => this.i.entity(id))
       .filter((e) => e.exists);

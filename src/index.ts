@@ -5,7 +5,7 @@ getInterface().then((i) => {
   const container = document.getElementById("container");
   (window as any).i = i;
 
-  i.initialise(80, 50);
+  i.initialise(60, 40);
 
   const d = new Display(i, container);
   (window as any).d = d;
