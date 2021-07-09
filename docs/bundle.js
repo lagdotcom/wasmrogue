@@ -9,8 +9,9 @@
     }(wglt));
 
     const range = (max) => Array.from(Array(max).keys());
+    const rng = (min, max) => Math.floor(Math.random() * (max - min + 1) + min);
 
-    const keys = [wglt.exports.Keys.VK_LEFT, wglt.exports.Keys.VK_UP, wglt.exports.Keys.VK_RIGHT, wglt.exports.Keys.VK_DOWN];
+    const keys = [wglt.exports.Keys.VK_LEFT, wglt.exports.Keys.VK_UP, wglt.exports.Keys.VK_RIGHT, wglt.exports.Keys.VK_DOWN, wglt.exports.Keys.VK_G];
     class Display {
         i;
         container;
@@ -137,7 +138,9 @@
             return this.i.input(id);
         }
     }
-    const getInterface = () => WebAssembly.instantiateStreaming(fetch(module)).then(({ instance }) => new WasmInterface(instance.exports));
+    const getInterface = () => WebAssembly.instantiateStreaming(fetch(module), {
+        host: { rng },
+    }).then(({ instance }) => new WasmInterface(instance.exports));
 
     getInterface().then((i) => {
         const container = document.getElementById("container");
