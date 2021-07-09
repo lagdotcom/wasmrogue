@@ -286,7 +286,7 @@ class Preprocessor {
   reserve(section: string, ssize: string, exportName?: string) {
     const size = this.evalNumber(ssize);
 
-    const [name, value] = this.define("mem" + section, this.ptr);
+    const [name, value] = this.define(section, this.ptr);
     const code = `(global $${name}${genExport(
       exportName
     )} i32 (i32.const ${value})) ;; size=${size}`;

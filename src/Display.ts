@@ -3,7 +3,7 @@ import { Keys, Terminal } from "wglt";
 import { REntity, WasmInterface } from "./interface";
 import { range } from "./utils";
 
-const keys = [Keys.VK_LEFT, Keys.VK_UP, Keys.VK_RIGHT, Keys.VK_DOWN];
+const keys = [Keys.VK_LEFT, Keys.VK_UP, Keys.VK_RIGHT, Keys.VK_DOWN, Keys.VK_G];
 
 export default class Display {
   e: HTMLCanvasElement;
