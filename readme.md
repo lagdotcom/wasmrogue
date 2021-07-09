@@ -39,8 +39,9 @@ My memory layout is dynamic because my preprocessor handles most of it. Here's w
 | ----- | -------- | -------------- |
 | 0     | 11\*2    | Tile types     |
 | 24    | 1..3     | Current action |
-| 32    | 32\*8    | Entity data    |
-| 2080  | 100\*100 | Tilemap        |
+| 32    | 256\*8   | Entity data    |
+| 2080  | 32\*4    | Room data      |
+| 2208  | 100\*100 | Tilemap        |
 
 This will probably change a fair bit when the ECS appears.
 
@@ -54,6 +55,10 @@ The equivalent of the tutorial's Action subclasses are stored like this:
 | 01  | `s8` dx `s8` dy | Move |
 
 ## Log
+
+### 2021-07-09
+
+Done with part 2 and part 3 now. For speed, I'm passing in a wrapper of JavaScript's `Math.random` call for the RNG, but I should probably replace that with a pure WASM solution at some point. Still no signs of an ECS!
 
 ### 2021-07-07
 

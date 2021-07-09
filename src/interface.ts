@@ -1,5 +1,5 @@
 import module from "../build/code.wasm";
-import { range } from "./utils";
+import { range, rng } from "./utils";
 
 interface ModuleInterface {
   gEntities: WebAssembly.Global;
@@ -104,7 +104,9 @@ export class WasmInterface {
 }
 
 const getInterface = () =>
-  WebAssembly.instantiateStreaming(fetch(module)).then(
+  WebAssembly.instantiateStreaming(fetch(module), {
+    host: { rng },
+  }).then(
     ({ instance }) =>
       new WasmInterface(instance.exports as unknown as ModuleInterface)
   );
