@@ -14,8 +14,6 @@
   (global $kGenerate i32 [[= 'G']])
 
   (global $playerID (export "gPlayerID") (mut i32) (i32.const 0))
-  (global $width (export "gWidth") (mut i32) (i32.const 0))
-  (global $height (export "gHeight") (mut i32) (i32.const 0))
 
   [[struct Tile walkable:u8 transparent:u8 ch:u8 fg:i32 bg:i32]]
   [[reserve TileTypes sizeof_Tile*2 gTileTypes]]
@@ -28,9 +26,12 @@
   (global $ttINVALID (export "gTileTypeCount") i32 [[= _Next]])
   (global $tileTypeSize (export "gTileTypeSize") i32 [[= sizeof_Tile]])
 
-  [[struct Entity exists:u8 x:u8 y:u8 ch:u8 colour:i32]]
+  [[struct Entity mask:i64]]
   (global $maxEntities (export "gMaxEntities") i32 (i32.const 256))
   (global $entitySize (export "gEntitySize") i32 [[= sizeof_Entity]])
+
+  [[component Appearance ch:u8 colour:i32]]
+  [[component Position x:u8 y:u8]]
 
   [[struct Room x1:u8 y1:u8 x2:u8 y2:u8]]
   (global $maxRoomSize i32 (i32.const 10))
@@ -44,17 +45,27 @@
   [[reserve Action Math.max(sizeof_NoneAction,sizeof_MoveAction,sizeof_GenerateAction)]]
   [[align 8]]
   [[reserve Entities maxEntities*sizeof_Entity gEntities]]
+  [[reserve Appearances maxEntities*sizeof_Appearance gAppearances]]
+  [[reserve Positions maxEntities*sizeof_Position gPositions]]
   [[reserve Rooms maxRooms*sizeof_Room gRooms]]
-  [[reserve Map 100*100 gMap]]
-  (global $mapSize (export "gMapSize") (mut i32) (i32.const 0))
+
+  (global $mapWidth (export "gMapWidth") i32 (i32.const 100))
+  (global $mapHeight (export "gMapHeight") i32 (i32.const 100))
+  (global $mapSize (export "gMapSize") i32 [[= mapWidth * mapHeight]])
+  [[reserve Map mapSize gMap]]
+
+  (global $displaySize (export "gDisplaySize") (mut i32) (i32.const 0))
+  (global $displayWidth (export "gDisplayWidth") (mut i32) (i32.const 0))
+  (global $displayHeight (export "gDisplayHeight") (mut i32) (i32.const 0))
+  [[reserve Display 100*100 gDisplay]]
 
   [[memory memory]]
 
   (func $initialise (export "initialise") (param $w i32) (param $h i32)
-    ;; TODO check $w * $h < sizeof_Map
-    (global.set $width (local.get $w))
-    (global.set $height (local.get $h))
-    (global.set $mapSize (i32.mul (local.get $w) (local.get $h)))
+    ;; TODO check $w * $h < sizeof_Display
+    (global.set $displayWidth (local.get $w))
+    (global.set $displayHeight (local.get $h))
+    (global.set $displaySize (i32.mul (local.get $w) (local.get $h)))
 
     (call $generateMap)
   )
@@ -284,11 +295,11 @@
       ))
       (local.set $x (call $rng
         (i32.const 0)
-        (i32.sub (i32.sub (global.get $width) (local.get $w)) (i32.const 1))
+        (i32.sub (i32.sub (global.get $mapWidth) (local.get $w)) (i32.const 1))
       ))
       (local.set $y (call $rng
         (i32.const 0)
-        (i32.sub (i32.sub (global.get $height) (local.get $h)) (i32.const 1))
+        (i32.sub (i32.sub (global.get $mapHeight) (local.get $h)) (i32.const 1))
       ))
       (call $saveRoom (local.get $n) (local.get $x) (local.get $y) (local.get $w) (local.get $h))
 
@@ -296,12 +307,9 @@
       (if (i32.eqz (local.get $n)) (then
         (call $carveRoom (i32.const 0))
 
-        ;; place player in centre of room
-        (call $initEntity (global.get $playerID)
+        (call $makePlayer
           (call $getRoomCX (i32.const 0))
           (call $getRoomCY (i32.const 0))
-          (global.get $chAt)
-          (global.get $cWhite)
         )
 
         (local.set $n (i32.const 1))
@@ -332,8 +340,8 @@
     (local $lastX i32)
     (local $lastY i32)
 
-    (local.set $lastX (i32.sub (global.get $width) (i32.const 1)))
-    (local.set $lastY (i32.sub (global.get $height) (i32.const 1)))
+    (local.set $lastX (i32.sub (global.get $mapWidth) (i32.const 1)))
+    (local.set $lastY (i32.sub (global.get $mapHeight) (i32.const 1)))
 
     (local.set $i (global.get $Map))
     (local.set $y (i32.const 0))
@@ -357,13 +365,13 @@
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
         (br_if $loopX (i32.ne
           (local.tee $x (i32.add (local.get $x) (i32.const 1)))
-          (global.get $width))
+          (global.get $mapWidth))
         )
       )
 
       (br_if $loopY (i32.ne
         (local.tee $y (i32.add (local.get $y) (i32.const 1)))
-        (global.get $height))
+        (global.get $mapHeight))
       )
     )
   )
@@ -373,7 +381,7 @@
       (global.get $Map)
       (i32.add
         (i32.mul
-          (global.get $width)
+          (global.get $mapWidth)
           (local.get $y)
         )
         (local.get $x)
@@ -399,32 +407,32 @@
     (i32.and
       (i32.and
         (i32.ge_s (local.get $x) (i32.const 0))
-        (i32.lt_s (local.get $x) (global.get $width))
+        (i32.lt_s (local.get $x) (global.get $mapWidth))
       )
       (i32.and
         (i32.ge_s (local.get $y) (i32.const 0))
-        (i32.lt_s (local.get $y) (global.get $height))
+        (i32.lt_s (local.get $y) (global.get $mapHeight))
       )
     )
   )
 
   (func $moveEntity (export "moveEntity") (param $eid i32) (param $mx i32) (param $my i32)
-    (local $mem i32)
+    (local $pos i32)
     (local $x i32)
     (local $y i32)
 
-    (local.set $mem (call $getEntity (local.get $eid)))
+    (local.set $pos (call $getPosition (local.get $eid)))
 
     (if (i32.and
       (call $isWalkable
-        (local.tee $x (i32.add [[load $mem Entity.x]] (local.get $mx)))
-        (local.tee $y (i32.add [[load $mem Entity.y]] (local.get $my)))
+        (local.tee $x (i32.add [[load $pos Position.x]] (local.get $mx)))
+        (local.tee $y (i32.add [[load $pos Position.y]] (local.get $my)))
       )
       (call $isInBounds (local.get $x) (local.get $y))
     )
       (then
-        [[store $mem Entity.x $x]]
-        [[store $mem Entity.y $y]]
+        [[store $pos Position.x $x]]
+        [[store $pos Position.y $y]]
       )
     )
   )
@@ -501,14 +509,10 @@
     )
   )
 
-  (func $initEntity (param $id i32) (param $x i32) (param $y i32) (param $ch i32) (param $colour i32)
-    (local $mem i32)
-    (local.set $mem (call $getEntity (local.get $id)))
-
-    [[store $mem Entity.exists 1]]
-    [[store $mem Entity.x $x]]
-    [[store $mem Entity.y $y]]
-    [[store $mem Entity.ch $ch]]
-    [[store $mem Entity.colour $colour]]
+  (func $makePlayer (param $x i32) (param $y i32)
+    (call $attachAppearance (global.get $playerID)
+      (global.get $chAt) (global.get $cWhite))
+    (call $attachPosition (global.get $playerID)
+      (local.get $x) (local.get $y))
   )
 )

@@ -3,6 +3,8 @@ import { readFileSync, writeFileSync } from "fs";
 import scopedEval from "./scoped-eval";
 
 const WASMPageSize = 0x10000;
+const EntityIDType = "i32";
+const EntityMaskType = "i64";
 
 function hex2(n: number) {
   const h = n.toString(16);
@@ -33,6 +35,12 @@ function getLoad(type: string) {
   if (type === "u8") return ["i32", "load8_u"];
   if (type === "s8") return ["i32", "load8_s"];
   throw new Error(`Unknown field type: ${type}`);
+}
+
+function genGlobal(name: string, type: string, value: number, extern?: string) {
+  return `(global $${name}${genExport(
+    extern
+  )} ${type} (${type}.const ${value}))`;
 }
 
 type WatThing = string | WatThing[];
@@ -114,8 +122,10 @@ interface Structure {
 
 class Preprocessor {
   env: Record<string, any>;
+  components!: string[];
   global!: string[];
   local!: string[];
+  ln!: number;
   processors: Record<string, Processor>;
   ptr!: number;
   structures!: Record<string, Structure>;
@@ -125,6 +135,7 @@ class Preprocessor {
     this.processors = {
       "=": this.evaluate.bind(this),
       align: this.align.bind(this),
+      component: this.component.bind(this),
       consts: this.consts.bind(this),
       data: this.data.bind(this),
       eval: this.evaluate.bind(this),
@@ -146,6 +157,7 @@ class Preprocessor {
 
   private init() {
     this.env = {};
+    this.components = [];
     this.global = [];
     this.local = [];
     this.ptr = 0;
@@ -163,7 +175,7 @@ class Preprocessor {
       return value.charCodeAt(0);
 
     if (typeof value !== "number" || isNaN(value))
-      throw new Error(`isNaN: ${code} = ${value}`);
+      throw this.error(`isNaN: ${code} = ${value}`);
 
     return value;
   }
@@ -189,18 +201,24 @@ class Preprocessor {
     return [name, value];
   }
 
+  private error(message: string) {
+    return new Error(`[${this.ln + 1}] ${message}`);
+  }
+
   process(code: string) {
     this.init();
     const processed: string[] = [];
 
     code.split("\n").forEach((line, ln) => {
+      this.ln = ln;
+
       let e = undefined;
       while (true) {
         const i = line.lastIndexOf("[[", e);
         if (i < 0) break;
 
         const j = line.indexOf("]]", i);
-        if (j < 0) throw new Error(`Line ${ln + 1}: [[ without ]]`);
+        if (j < 0) throw this.error("[[ without ]]");
 
         const old = line.slice(i, j + 2);
         const command = old.slice(2, -2).trim();
@@ -210,7 +228,7 @@ class Preprocessor {
           const repl = this.processors[p](...args) || "";
           line = line.slice(0, i) + repl + line.slice(j + 2);
         } else {
-          console.warn(`Line ${ln + 1}: ignored unknown processor: ${p}`);
+          console.warn(`[${ln + 1}] ignored unknown processor: ${p}`);
           e = i - 1;
         }
       }
@@ -249,9 +267,9 @@ class Preprocessor {
   }
 
   parseLocal(line: string) {
-    const [, name] = watSplit(line);
+    const [, name, type] = watSplit(line);
 
-    if (Array.isArray(name)) return;
+    if (Array.isArray(name) || !type) return;
 
     this.log("known local:", name);
     this.local.push(name);
@@ -261,8 +279,6 @@ class Preprocessor {
     const [, name, type, initialiser] = watSplit(line).filter(
       (p) => typeof p === "string" || p[0] !== "export"
     );
-
-    this.log("parseGlobal", { name, type, initialiser });
 
     // invalid?
     if (Array.isArray(name) || !Array.isArray(initialiser)) return;
@@ -288,7 +304,7 @@ class Preprocessor {
       .map((n, i) => {
         const [name, value] = this.define(prefix + n, start + i);
         this.define("_Next", value + 1);
-        return ` (global $${name} i32 (i32.const ${value}))`;
+        return genGlobal(name, "i32", value);
       })
       .join("\n");
   }
@@ -297,9 +313,7 @@ class Preprocessor {
     const size = this.evalNumber(ssize);
 
     const [name, value] = this.define(section, this.ptr);
-    const code = `(global $${name}${genExport(
-      exportName
-    )} i32 (i32.const ${value})) ;; size=${size}`;
+    const code = genGlobal(name, "i32", value, exportName) + ` ;; size=${size}`;
     this.ptr += size;
 
     this.define("sizeof_" + section, size);
@@ -332,9 +346,9 @@ class Preprocessor {
   store(sstart: string, path: string, ...code: string[]) {
     const [sname, fname] = path.split(".");
     const s = this.structures[sname];
-    if (!s) throw new Error(`Unknown structure: ${sname}`);
+    if (!s) throw this.error(`Unknown structure: ${sname}`);
     const f = s.fields[fname];
-    if (!f) throw new Error(`Unknown field: ${sname}.${fname}`);
+    if (!f) throw this.error(`Unknown field: ${sname}.${fname}`);
 
     const [type, store] = getStore(f.type);
     const offset = f.offset > 0 ? ` offset=${f.offset}` : "";
@@ -348,9 +362,9 @@ class Preprocessor {
   load(sstart: string, path: string) {
     const [sname, fname] = path.split(".");
     const s = this.structures[sname];
-    if (!s) throw new Error(`Unknown structure: ${sname}`);
+    if (!s) throw this.error(`Unknown structure: ${sname}`);
     const f = s.fields[fname];
-    if (!f) throw new Error(`Unknown field: ${sname}.${fname}`);
+    if (!f) throw this.error(`Unknown field: ${sname}.${fname}`);
 
     const [type, load] = getLoad(f.type);
     const offset = f.offset > 0 ? ` offset=${f.offset}` : "";
@@ -377,7 +391,7 @@ class Preprocessor {
 
   data(name: string, ...fields: string[]) {
     const s = this.structures[name];
-    if (!s) throw new Error(`Unknown structure: ${name}`);
+    if (!s) throw this.error(`Unknown structure: ${name}`);
 
     const fieldNames = Object.keys(s.fields);
     const data: Record<string, number> = Object.fromEntries(
@@ -386,7 +400,7 @@ class Preprocessor {
     fields.forEach((fstring) => {
       const [fname, fvalue] = fstring.split("=");
       const f = s.fields[fname];
-      if (!f) throw new Error(`Unknown structure field: ${name}.${fname}`);
+      if (!f) throw this.error(`Unknown structure field: ${name}.${fname}`);
 
       const value = this.evalNumber(fvalue);
       data[fname] = value;
@@ -414,7 +428,7 @@ class Preprocessor {
           break;
 
         default:
-          throw new Error(`Don't know how to write ${f.type}`);
+          throw this.error(`Don't know how to write ${f.type}`);
       }
     });
 
@@ -424,6 +438,65 @@ class Preprocessor {
       dataString += `\\${hex2(b)}`;
     }
     return '"' + dataString + '"';
+  }
+
+  component(name: string, ...fields: string[]) {
+    this.struct(name, ...fields);
+
+    const id = this.components.length;
+    const mask = 2 ** id;
+
+    const [maskName] = this.define(`Mask_${name}`, mask);
+    this.components.push(name);
+
+    return [
+      genGlobal(maskName, EntityMaskType, mask, maskName),
+      this.genGetComponent(name),
+      this.genAttachComponent(name),
+      this.genDetachComponent(name),
+    ].join("\n");
+  }
+
+  private genGetComponent(name: string) {
+    const struct = this.structures[name];
+
+    return `(func $get${name} (param $eid ${EntityIDType}) (result i32)
+  (i32.add
+    (global.get $${name}s)
+    (i32.mul (local.get $eid) (i32.const ${struct.size}))
+  )
+)`;
+  }
+
+  private genAttachComponent(name: string) {
+    const struct = this.structures[name];
+    const fields = Object.values(struct.fields);
+
+    return `(func $attach${name} (param $eid ${EntityIDType}) ${fields
+      .map((f) => `(param $${f.name} ${getStore(f.type)[0]})`)
+      .join(" ")}
+  (local $entity i32)
+  (local $mem i32)
+  (local.set $entity (call $getEntity (local.get $eid)))
+  (local.set $mem (call $get${name} (local.get $eid)))
+
+  [[store (local.get $entity) Entity.mask (${EntityMaskType}.or [[load (local.get $entity) Entity.mask]] [[= $Mask_${name}]])]]
+  ${fields
+    .map(
+      (f) =>
+        `[[store (local.get $mem) ${name}.${f.name} (local.get $${f.name})]]`
+    )
+    .join("\n")}
+)`;
+  }
+
+  private genDetachComponent(name: string) {
+    return `(func $detach${name} (param $eid ${EntityIDType})
+  (local $entity i32)
+  (local.set $entity (call $getEntity (local.get $eid)))
+
+  [[store (local.get $entity) Entity.mask (${EntityMaskType}.xor [[load (local.get $entity) Entity.mask]] [[= $Mask_${name}]])]]
+)`;
   }
 }
 

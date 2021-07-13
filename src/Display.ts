@@ -1,23 +1,30 @@
 import { Keys, Terminal } from "wglt";
 
-import { REntity, WasmInterface } from "./interface";
+import { RAppearance, REntity, RPosition, WasmInterface } from "./interface";
 import { range } from "./utils";
 
 const keys = [Keys.VK_LEFT, Keys.VK_UP, Keys.VK_RIGHT, Keys.VK_DOWN, Keys.VK_G];
+
+type RVisibleEntity = REntity & {
+  Appearance: RAppearance;
+  Position: RPosition;
+};
+const isVisible = (e: REntity): e is RVisibleEntity =>
+  Boolean(e.Appearance && e.Position);
 
 export default class Display {
   e: HTMLCanvasElement;
   w: number;
   h: number;
   entityIDs: number[];
-  entities!: REntity[];
+  entities!: RVisibleEntity[];
   term: Terminal;
   tiles!: Uint8Array;
 
   constructor(private i: WasmInterface, private container: HTMLElement) {
     this.e = document.createElement("canvas");
-    this.w = i.width;
-    this.h = i.height;
+    this.w = i.mapWidth;
+    this.h = i.mapHeight;
 
     this.term = new Terminal(this.e, this.w, this.h);
 
@@ -47,17 +54,23 @@ export default class Display {
     const id = this.tiles[y * this.w + x];
     const tt = this.i.tileTypes[id];
 
-    const [e] = this.entities.filter((e) => e.x === x && e.y === y);
-    if (e) return [e.ch, e.colour, tt.bg];
+    const [e] = this.getEntitiesAt(x, y);
+    if (e) return [e.Appearance.ch, e.Appearance.fg, tt.bg];
 
     return [tt.ch, tt.fg, tt.bg];
+  }
+
+  getEntitiesAt(x: number, y: number) {
+    return this.entities.filter(
+      (e) => e.Position.x === x && e.Position.y === y
+    );
   }
 
   updateEntityList() {
     // TODO is this good? lol
     this.entities = this.entityIDs
       .map((id) => this.i.entity(id))
-      .filter((e) => e.exists);
+      .filter(isVisible);
   }
 
   updateTiles() {
