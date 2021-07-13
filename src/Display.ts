@@ -10,9 +10,9 @@ export default class Display {
   w: number;
   h: number;
   entityIDs: number[];
-  entities: REntity[];
+  entities!: REntity[];
   term: Terminal;
-  tiles: Uint8Array;
+  tiles!: Uint8Array;
 
   constructor(private i: WasmInterface, private container: HTMLElement) {
     this.e = document.createElement("canvas");

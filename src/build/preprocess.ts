@@ -35,9 +35,9 @@ function getLoad(type: string) {
   throw new Error(`Unknown field type: ${type}`);
 }
 
-type WatThing = string | string[];
+type WatThing = string | WatThing[];
 function watItem(code: string, s: number): [WatThing, number] {
-  const parts = [];
+  const parts: WatThing = [];
   let current = "";
 
   for (let i = s; i < code.length; i++) {
@@ -99,7 +99,7 @@ function ppSplit(code: string): string[] {
   return parts;
 }
 
-type Processor = (...args: string[]) => string;
+type Processor = (...args: string[]) => string | void;
 interface StructureField {
   name: string;
   type: string;
@@ -114,13 +114,13 @@ interface Structure {
 
 class Preprocessor {
   env: Record<string, any>;
-  global: string[];
-  local: string[];
+  global!: string[];
+  local!: string[];
   processors: Record<string, Processor>;
-  ptr: number;
-  structures: Record<string, Structure>;
+  ptr!: number;
+  structures!: Record<string, Structure>;
 
-  constructor() {
+  constructor(public verbose: boolean = false) {
     this.env = {};
     this.processors = {
       "=": this.evaluate.bind(this),
@@ -134,6 +134,14 @@ class Preprocessor {
       store: this.store.bind(this),
       struct: this.struct.bind(this),
     };
+
+    this.parseFunc = this.parseFunc.bind(this);
+    this.parseGlobal = this.parseGlobal.bind(this);
+    this.parseLocal = this.parseLocal.bind(this);
+  }
+
+  private log(...params: any[]) {
+    if (this.verbose) console.log(...params);
   }
 
   private init() {
@@ -176,14 +184,14 @@ class Preprocessor {
 
   private define<T>(name: string, value: T): [string, T] {
     // TODO this defines [[consts]] stuff twice
-    // console.log("define:", name, value);
+    this.log("define:", name, value);
     this.env[name] = value;
     return [name, value];
   }
 
   process(code: string) {
     this.init();
-    const processed = [];
+    const processed: string[] = [];
 
     code.split("\n").forEach((line, ln) => {
       let e = undefined;
@@ -211,41 +219,41 @@ class Preprocessor {
       processed.push(line);
     });
 
-    // console.log("defines:", this.env);
+    this.log("defines:", this.env);
     return processed.join("\n");
   }
 
   scanAll(line: string) {
-    this.scan(line, "(func ", "parseFunc");
-    this.scan(line, "(global ", "parseGlobal");
-    this.scan(line, "(local ", "parseLocal");
-    this.scan(line, "(param ", "parseLocal");
+    this.scan(line, "(func ", this.parseFunc);
+    this.scan(line, "(global ", this.parseGlobal);
+    this.scan(line, "(local ", this.parseLocal);
+    this.scan(line, "(param ", this.parseLocal);
   }
 
-  scan(line: string, pattern: string, fn: string) {
+  scan(line: string, pattern: string, fn: (line: string) => void) {
     let s = 0;
     while (true) {
       const i = line.indexOf(pattern, s);
       if (i < 0) return;
 
-      this[fn](line.substr(i));
+      fn(line.substr(i));
       s = i + 1;
     }
   }
 
   parseFunc() {
     if (this.local.length) {
-      // console.log("locals fall out of scope:", this.local);
+      this.log("locals fall out of scope:", this.local);
       this.local = [];
     }
   }
 
   parseLocal(line: string) {
-    const [, name, type] = watSplit(line);
+    const [, name] = watSplit(line);
 
     if (Array.isArray(name)) return;
 
-    // console.log("known local:", name);
+    this.log("known local:", name);
     this.local.push(name);
   }
 
@@ -254,19 +262,21 @@ class Preprocessor {
       (p) => typeof p === "string" || p[0] !== "export"
     );
 
+    this.log("parseGlobal", { name, type, initialiser });
+
     // invalid?
     if (Array.isArray(name) || !Array.isArray(initialiser)) return;
 
     // mutable global
     if (Array.isArray(type) && type[0] === "mut") {
-      // console.log("known global:", name);
+      this.log("known global:", name);
       this.global.push(name);
       return;
     }
 
     // const
     const [itype, value] = initialiser;
-    if (itype.endsWith(".const")) {
+    if (typeof itype === "string" && itype.endsWith(".const")) {
       this.define(name.substr(1), Number(value));
     }
   }
@@ -382,7 +392,7 @@ class Preprocessor {
       data[fname] = value;
     });
 
-    // console.log(data);
+    this.log(data);
     const size = this.env["sizeof_" + name] as number;
     const buffer = new ArrayBuffer(size);
     const view = new DataView(buffer);

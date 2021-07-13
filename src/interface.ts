@@ -42,7 +42,13 @@ export class WasmInterface {
   map: DataView;
   tileTypes: RTileType[];
 
-  constructor(private i: ModuleInterface) {}
+  constructor(private i: ModuleInterface) {
+    const empty = new ArrayBuffer(0);
+    this.entities = new DataView(empty);
+    this.maxEntities = 0;
+    this.map = new DataView(empty);
+    this.tileTypes = [];
+  }
 
   get width(): number {
     return this.i.gWidth.value;
