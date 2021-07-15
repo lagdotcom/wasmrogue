@@ -2,16 +2,35 @@ import module from "../build/code.wasm";
 import { range, rng } from "./utils";
 
 interface ModuleInterface {
+  Mask_Appearance: WebAssembly.Global;
+  gAppearances: WebAssembly.Global;
+  Mask_Position: WebAssembly.Global;
+  gPositions: WebAssembly.Global;
+
+  gDisplay: WebAssembly.Global;
+  gDisplayFG: WebAssembly.Global;
+  gDisplayBG: WebAssembly.Global;
+  gDisplayMinX: WebAssembly.Global;
+  gDisplayMinY: WebAssembly.Global;
+  gDisplayMaxX: WebAssembly.Global;
+  gDisplayMaxY: WebAssembly.Global;
+  gDisplayHeight: WebAssembly.Global;
+  gDisplayWidth: WebAssembly.Global;
+  gDisplaySize: WebAssembly.Global;
+
+  gMap: WebAssembly.Global;
+  gMapHeight: WebAssembly.Global;
+  gMapWidth: WebAssembly.Global;
+  gMapSize: WebAssembly.Global;
+
   gEntities: WebAssembly.Global;
   gEntitySize: WebAssembly.Global;
-  gHeight: WebAssembly.Global;
-  gMap: WebAssembly.Global;
   gMaxEntities: WebAssembly.Global;
+
   gPlayerID: WebAssembly.Global;
   gTileTypeCount: WebAssembly.Global;
   gTileTypes: WebAssembly.Global;
   gTileTypeSize: WebAssembly.Global;
-  gWidth: WebAssembly.Global;
 
   memory: WebAssembly.Memory;
 
@@ -20,12 +39,20 @@ interface ModuleInterface {
   moveEntity(eid: number, mx: number, my: number): void;
 }
 
-export interface REntity {
-  exists: boolean;
+export interface RAppearance {
+  ch: number;
+  fg: number;
+}
+
+export interface RPosition {
   x: number;
   y: number;
-  ch: number;
-  colour: number;
+}
+
+export interface REntity {
+  id: number;
+  Appearance?: RAppearance;
+  Position?: RPosition;
 }
 
 export interface RTileType {
@@ -37,21 +64,45 @@ export interface RTileType {
 }
 
 export class WasmInterface {
+  bits: Record<string, bigint>;
+  display: DataView;
+  displayFg: DataView;
+  displayBg: DataView;
   entities: DataView;
   maxEntities: number;
   map: DataView;
   tileTypes: RTileType[];
 
-  constructor(private i: ModuleInterface) {}
+  constructor(private i: ModuleInterface) {
+    const empty = new ArrayBuffer(0);
+    this.bits = {};
+    this.display = new DataView(empty);
+    this.displayFg = new DataView(empty);
+    this.displayBg = new DataView(empty);
+    this.entities = new DataView(empty);
+    this.maxEntities = 0;
+    this.map = new DataView(empty);
+    this.tileTypes = [];
+  }
 
-  get width(): number {
-    return this.i.gWidth.value;
+  get mapWidth(): number {
+    return this.i.gMapWidth.value;
   }
-  get height(): number {
-    return this.i.gHeight.value;
+  get mapHeight(): number {
+    return this.i.gMapHeight.value;
   }
-  get tileSize(): number {
-    return this.width * this.height;
+  get mapSize(): number {
+    return this.mapWidth * this.mapHeight;
+  }
+
+  get displayWidth(): number {
+    return this.i.gDisplayWidth.value;
+  }
+  get displayHeight(): number {
+    return this.i.gDisplayHeight.value;
+  }
+  get displaySize(): number {
+    return this.displayWidth * this.displayHeight;
   }
 
   private slice(start: number, length: number) {
@@ -59,15 +110,37 @@ export class WasmInterface {
   }
 
   entity(id: number): REntity {
-    const eSize = this.i.gEntitySize.value;
-    const offset = id * eSize;
+    const mask = this.entities.getBigUint64(
+      id * this.i.gEntitySize.value,
+      true
+    );
+    const e: REntity = { id };
+
+    if (mask & this.bits.Appearance) e.Appearance = this.appearance(id);
+    if (mask & this.bits.Position) e.Position = this.position(id);
+
+    return e;
+  }
+
+  appearance(id: number): RAppearance {
+    const size = 5;
+    const offset = id * size + this.i.gAppearances.value;
+    const mem = this.slice(offset, size);
 
     return {
-      exists: this.entities.getUint8(offset) !== 0,
-      x: this.entities.getUint8(offset + 1),
-      y: this.entities.getUint8(offset + 2),
-      ch: this.entities.getUint8(offset + 3),
-      colour: this.entities.getUint32(offset + 4, true),
+      ch: mem.getUint8(0),
+      fg: mem.getUint32(1, true),
+    };
+  }
+
+  position(id: number): RPosition {
+    const size = 2;
+    const offset = id * size + this.i.gPositions.value;
+    const mem = this.slice(offset, size);
+
+    return {
+      x: mem.getUint8(0),
+      y: mem.getUint8(1),
     };
   }
 
@@ -92,10 +165,18 @@ export class WasmInterface {
       this.i.gEntities.value,
       this.i.gEntitySize.value * this.maxEntities
     );
-    this.map = this.slice(this.i.gMap.value, this.tileSize);
+    this.map = this.slice(this.i.gMap.value, this.mapSize);
+    this.display = this.slice(this.i.gDisplay.value, this.displaySize);
+    this.displayFg = this.slice(this.i.gDisplayFG.value, this.displaySize * 4);
+    this.displayBg = this.slice(this.i.gDisplayBG.value, this.displaySize * 4);
     this.tileTypes = range(this.i.gTileTypeCount.value).map((id) =>
       this.tt(id)
     );
+
+    this.bits = {
+      Appearance: this.i.Mask_Appearance.value,
+      Position: this.i.Mask_Position.value,
+    };
   }
 
   input(id: number): boolean {

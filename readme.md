@@ -31,6 +31,14 @@ Preprocessor commands:
 
 The preprocessor's parsing mechanism is custom and weird. It shouldn't get in the way. It's okay to put commands inside other commands. It's also okay to put WASM code as command arguments, at least sometimes.
 
+### ECS
+
+- Entity: `u8` exists, `i64` mask (bit mask of component presence, so up to 64 components possible)
+- Component: array of data specific to component
+- System: `i64` mask, `funcref` fn (preprocessor will have to do some trickery here to pass the components to the function)
+
+In short I'm planning a duplicate of `[[struct]]` called `[[component]]` which will handle additional state (component id/mask) and a new processor `[[system name component...]] ... [[/system]]` which will define everything necessary. There will also need to be a way to inject a generic "run all systems" function into the code. Undecided on how to do this yet.
+
 ### Memory Layout
 
 My memory layout is dynamic because my preprocessor handles most of it. Here's what is in the current build:
@@ -55,6 +63,10 @@ The equivalent of the tutorial's Action subclasses are stored like this:
 | 01  | `s8` dx `s8` dy | Move |
 
 ## Log
+
+### 2021-07-13
+
+Week 3 has started but I'm not quite ready for it yet. I want to start using an ECS now so that later changes will be easier. In preparation, I... turned on TypeScript strict mode to give me something else to do.
 
 ### 2021-07-09
 

@@ -3,6 +3,8 @@ import { readFileSync, writeFileSync } from "fs";
 import scopedEval from "./scoped-eval";
 
 const WASMPageSize = 0x10000;
+const EntityIDType = "i32";
+const EntityMaskType = "i64";
 
 function hex2(n: number) {
   const h = n.toString(16);
@@ -35,9 +37,15 @@ function getLoad(type: string) {
   throw new Error(`Unknown field type: ${type}`);
 }
 
-type WatThing = string | string[];
+function genGlobal(name: string, type: string, value: number, extern?: string) {
+  return `(global $${name}${genExport(
+    extern
+  )} ${type} (${type}.const ${value}))`;
+}
+
+type WatThing = string | WatThing[];
 function watItem(code: string, s: number): [WatThing, number] {
-  const parts = [];
+  const parts: WatThing = [];
   let current = "";
 
   for (let i = s; i < code.length; i++) {
@@ -99,7 +107,7 @@ function ppSplit(code: string): string[] {
   return parts;
 }
 
-type Processor = (...args: string[]) => string;
+type Processor = (...args: string[]) => string | void;
 interface StructureField {
   name: string;
   type: string;
@@ -114,30 +122,46 @@ interface Structure {
 
 class Preprocessor {
   env: Record<string, any>;
-  global: string[];
-  local: string[];
+  components!: string[];
+  global!: string[];
+  local!: string[];
+  ln!: number;
   processors: Record<string, Processor>;
-  ptr: number;
-  structures: Record<string, Structure>;
+  ptr!: number;
+  structures!: Record<string, Structure>;
 
-  constructor() {
+  constructor(public verbose: boolean = false) {
     this.env = {};
     this.processors = {
       "=": this.evaluate.bind(this),
+      "=64": this.evaluate64.bind(this),
       align: this.align.bind(this),
+      component: this.component.bind(this),
       consts: this.consts.bind(this),
       data: this.data.bind(this),
       eval: this.evaluate.bind(this),
+      eval64: this.evaluate64.bind(this),
       load: this.load.bind(this),
       memory: this.memory.bind(this),
       reserve: this.reserve.bind(this),
       store: this.store.bind(this),
       struct: this.struct.bind(this),
+      system: this.system.bind(this),
+      "/system": this.systemEnd.bind(this),
     };
+
+    this.parseFunc = this.parseFunc.bind(this);
+    this.parseGlobal = this.parseGlobal.bind(this);
+    this.parseLocal = this.parseLocal.bind(this);
+  }
+
+  private log(...params: any[]) {
+    if (this.verbose) console.log(...params);
   }
 
   private init() {
     this.env = {};
+    this.components = [];
     this.global = [];
     this.local = [];
     this.ptr = 0;
@@ -155,7 +179,7 @@ class Preprocessor {
       return value.charCodeAt(0);
 
     if (typeof value !== "number" || isNaN(value))
-      throw new Error(`isNaN: ${code} = ${value}`);
+      throw this.error(`isNaN: ${code} = ${value}`);
 
     return value;
   }
@@ -176,23 +200,29 @@ class Preprocessor {
 
   private define<T>(name: string, value: T): [string, T] {
     // TODO this defines [[consts]] stuff twice
-    // console.log("define:", name, value);
+    this.log("define:", name, value);
     this.env[name] = value;
     return [name, value];
   }
 
+  private error(message: string) {
+    return new Error(`[${this.ln + 1}] ${message}`);
+  }
+
   process(code: string) {
     this.init();
-    const processed = [];
+    const processed: string[] = [];
 
     code.split("\n").forEach((line, ln) => {
+      this.ln = ln;
+
       let e = undefined;
       while (true) {
         const i = line.lastIndexOf("[[", e);
         if (i < 0) break;
 
         const j = line.indexOf("]]", i);
-        if (j < 0) throw new Error(`Line ${ln + 1}: [[ without ]]`);
+        if (j < 0) throw this.error("[[ without ]]");
 
         const old = line.slice(i, j + 2);
         const command = old.slice(2, -2).trim();
@@ -202,7 +232,7 @@ class Preprocessor {
           const repl = this.processors[p](...args) || "";
           line = line.slice(0, i) + repl + line.slice(j + 2);
         } else {
-          console.warn(`Line ${ln + 1}: ignored unknown processor: ${p}`);
+          console.warn(`[${ln + 1}] ignored unknown processor: ${p}`);
           e = i - 1;
         }
       }
@@ -211,31 +241,31 @@ class Preprocessor {
       processed.push(line);
     });
 
-    // console.log("defines:", this.env);
+    this.log("defines:", this.env);
     return processed.join("\n");
   }
 
   scanAll(line: string) {
-    this.scan(line, "(func ", "parseFunc");
-    this.scan(line, "(global ", "parseGlobal");
-    this.scan(line, "(local ", "parseLocal");
-    this.scan(line, "(param ", "parseLocal");
+    this.scan(line, "(func ", this.parseFunc);
+    this.scan(line, "(global ", this.parseGlobal);
+    this.scan(line, "(local ", this.parseLocal);
+    this.scan(line, "(param ", this.parseLocal);
   }
 
-  scan(line: string, pattern: string, fn: string) {
+  scan(line: string, pattern: string, fn: (line: string) => void) {
     let s = 0;
     while (true) {
       const i = line.indexOf(pattern, s);
       if (i < 0) return;
 
-      this[fn](line.substr(i));
+      fn(line.substr(i));
       s = i + 1;
     }
   }
 
   parseFunc() {
     if (this.local.length) {
-      // console.log("locals fall out of scope:", this.local);
+      this.log("locals fall out of scope:", this.local);
       this.local = [];
     }
   }
@@ -243,9 +273,9 @@ class Preprocessor {
   parseLocal(line: string) {
     const [, name, type] = watSplit(line);
 
-    if (Array.isArray(name)) return;
+    if (Array.isArray(name) || !type) return;
 
-    // console.log("known local:", name);
+    this.log("known local:", name);
     this.local.push(name);
   }
 
@@ -259,14 +289,14 @@ class Preprocessor {
 
     // mutable global
     if (Array.isArray(type) && type[0] === "mut") {
-      // console.log("known global:", name);
+      this.log("known global:", name);
       this.global.push(name);
       return;
     }
 
     // const
     const [itype, value] = initialiser;
-    if (itype.endsWith(".const")) {
+    if (typeof itype === "string" && itype.endsWith(".const")) {
       this.define(name.substr(1), Number(value));
     }
   }
@@ -278,7 +308,7 @@ class Preprocessor {
       .map((n, i) => {
         const [name, value] = this.define(prefix + n, start + i);
         this.define("_Next", value + 1);
-        return ` (global $${name} i32 (i32.const ${value}))`;
+        return genGlobal(name, "i32", value);
       })
       .join("\n");
   }
@@ -287,9 +317,7 @@ class Preprocessor {
     const size = this.evalNumber(ssize);
 
     const [name, value] = this.define(section, this.ptr);
-    const code = `(global $${name}${genExport(
-      exportName
-    )} i32 (i32.const ${value})) ;; size=${size}`;
+    const code = genGlobal(name, "i32", value, exportName) + ` ;; size=${size}`;
     this.ptr += size;
 
     this.define("sizeof_" + section, size);
@@ -322,9 +350,9 @@ class Preprocessor {
   store(sstart: string, path: string, ...code: string[]) {
     const [sname, fname] = path.split(".");
     const s = this.structures[sname];
-    if (!s) throw new Error(`Unknown structure: ${sname}`);
+    if (!s) throw this.error(`Unknown structure: ${sname}`);
     const f = s.fields[fname];
-    if (!f) throw new Error(`Unknown field: ${sname}.${fname}`);
+    if (!f) throw this.error(`Unknown field: ${sname}.${fname}`);
 
     const [type, store] = getStore(f.type);
     const offset = f.offset > 0 ? ` offset=${f.offset}` : "";
@@ -338,9 +366,9 @@ class Preprocessor {
   load(sstart: string, path: string) {
     const [sname, fname] = path.split(".");
     const s = this.structures[sname];
-    if (!s) throw new Error(`Unknown structure: ${sname}`);
+    if (!s) throw this.error(`Unknown structure: ${sname}`);
     const f = s.fields[fname];
-    if (!f) throw new Error(`Unknown field: ${sname}.${fname}`);
+    if (!f) throw this.error(`Unknown field: ${sname}.${fname}`);
 
     const [type, load] = getLoad(f.type);
     const offset = f.offset > 0 ? ` offset=${f.offset}` : "";
@@ -355,6 +383,11 @@ class Preprocessor {
     return this.evalConst(code, "i32");
   }
 
+  evaluate64(...parts: string[]) {
+    const code = parts.join(" ");
+    return this.evalConst(code, "i64");
+  }
+
   align(...parts: string[]) {
     const code = parts.join(" ");
     const size = this.evalNumber(code || "4");
@@ -367,7 +400,7 @@ class Preprocessor {
 
   data(name: string, ...fields: string[]) {
     const s = this.structures[name];
-    if (!s) throw new Error(`Unknown structure: ${name}`);
+    if (!s) throw this.error(`Unknown structure: ${name}`);
 
     const fieldNames = Object.keys(s.fields);
     const data: Record<string, number> = Object.fromEntries(
@@ -376,13 +409,13 @@ class Preprocessor {
     fields.forEach((fstring) => {
       const [fname, fvalue] = fstring.split("=");
       const f = s.fields[fname];
-      if (!f) throw new Error(`Unknown structure field: ${name}.${fname}`);
+      if (!f) throw this.error(`Unknown structure field: ${name}.${fname}`);
 
       const value = this.evalNumber(fvalue);
       data[fname] = value;
     });
 
-    // console.log(data);
+    this.log(data);
     const size = this.env["sizeof_" + name] as number;
     const buffer = new ArrayBuffer(size);
     const view = new DataView(buffer);
@@ -404,7 +437,7 @@ class Preprocessor {
           break;
 
         default:
-          throw new Error(`Don't know how to write ${f.type}`);
+          throw this.error(`Don't know how to write ${f.type}`);
       }
     });
 
@@ -414,6 +447,116 @@ class Preprocessor {
       dataString += `\\${hex2(b)}`;
     }
     return '"' + dataString + '"';
+  }
+
+  component(name: string, ...fields: string[]) {
+    this.struct(name, ...fields);
+
+    const id = this.components.length;
+    const mask = 2 ** id;
+
+    const [maskName] = this.define(`Mask_${name}`, mask);
+    this.components.push(name);
+
+    return [
+      genGlobal(maskName, EntityMaskType, mask, maskName),
+      this.genGetComponent(name),
+      this.genAttachComponent(name),
+      this.genDetachComponent(name),
+    ].join("\n");
+  }
+
+  private genGetComponent(name: string) {
+    const struct = this.structures[name];
+
+    return `(func $get${name} (param $eid ${EntityIDType}) (result i32)
+  (i32.add
+    (global.get $${name}s)
+    (i32.mul (local.get $eid) (i32.const ${struct.size}))
+  )
+)`;
+  }
+
+  private genAttachComponent(name: string) {
+    const struct = this.structures[name];
+    const fields = Object.values(struct.fields);
+
+    return `(func $attach${name} (param $eid ${EntityIDType}) ${fields
+      .map((f) => `(param $${f.name} ${getStore(f.type)[0]})`)
+      .join(" ")}
+  (local $entity i32)
+  (local $mem i32)
+  (local.set $entity (call $getEntity (local.get $eid)))
+  (local.set $mem (call $get${name} (local.get $eid)))
+
+  [[store (local.get $entity) Entity.mask (${EntityMaskType}.or [[load (local.get $entity) Entity.mask]] [[= $Mask_${name}]])]]
+  ${fields
+    .map(
+      (f) =>
+        `[[store (local.get $mem) ${name}.${f.name} (local.get $${f.name})]]`
+    )
+    .join("\n")}
+)`;
+  }
+
+  private genDetachComponent(name: string) {
+    return `(func $detach${name} (param $eid ${EntityIDType})
+  (local $entity i32)
+  (local.set $entity (call $getEntity (local.get $eid)))
+
+  [[store (local.get $entity) Entity.mask (${EntityMaskType}.xor [[load (local.get $entity) Entity.mask]] [[= $Mask_${name}]])]]
+)`;
+  }
+
+  system(name: string, ...components: string[]) {
+    for (let i = 0; i < components.length; i++) {
+      const cname = components[i];
+      if (!this.structures[cname])
+        throw this.error(`Unknown component: ${cname}`);
+    }
+
+    return [
+      this.genSystemFunction(name, components),
+      this.genDoFunction(name, components),
+    ].join("\n");
+  }
+
+  genSystemFunction(name: string, components: string[]) {
+    const mask = components
+      .map((cname) => this.env["Mask_" + cname] as number)
+      .reduce((a, b) => a | b);
+
+    return `(func $sys${name}
+    (local $eid i32)
+    (local.set $eid (i32.const 0))
+    (loop $entities
+      (if (${EntityMaskType}.eq (${EntityMaskType}.and
+        [[load (call $getEntity (local.get $eid)) Entity.mask]]
+        (${EntityMaskType}.const ${mask})
+      ) (${EntityMaskType}.const ${mask})) (then
+        (call $do${name} (local.get $eid)
+          ${components
+            .map((cname) => `(call $get${cname} (local.get $eid))`)
+            .join("\n          ")}
+        )
+      ))
+
+      (br_if $entities (i32.ne
+        (local.tee $eid (i32.add (local.get $eid) (i32.const 1)))
+        (global.get $maxEntities)
+      ))
+    )
+  )`;
+  }
+
+  genDoFunction(name: string, components: string[]) {
+    return `(func $do${name} (param $eid i32) ${components
+      .map((c) => `(param $${c} i32)`)
+      .join(" ")}`;
+  }
+
+  systemEnd() {
+    return ")";
   }
 }
 
