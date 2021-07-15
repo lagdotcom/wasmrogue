@@ -8,6 +8,12 @@ interface ModuleInterface {
   gPositions: WebAssembly.Global;
 
   gDisplay: WebAssembly.Global;
+  gDisplayFG: WebAssembly.Global;
+  gDisplayBG: WebAssembly.Global;
+  gDisplayMinX: WebAssembly.Global;
+  gDisplayMinY: WebAssembly.Global;
+  gDisplayMaxX: WebAssembly.Global;
+  gDisplayMaxY: WebAssembly.Global;
   gDisplayHeight: WebAssembly.Global;
   gDisplayWidth: WebAssembly.Global;
   gDisplaySize: WebAssembly.Global;
@@ -59,6 +65,9 @@ export interface RTileType {
 
 export class WasmInterface {
   bits: Record<string, bigint>;
+  display: DataView;
+  displayFg: DataView;
+  displayBg: DataView;
   entities: DataView;
   maxEntities: number;
   map: DataView;
@@ -67,6 +76,9 @@ export class WasmInterface {
   constructor(private i: ModuleInterface) {
     const empty = new ArrayBuffer(0);
     this.bits = {};
+    this.display = new DataView(empty);
+    this.displayFg = new DataView(empty);
+    this.displayBg = new DataView(empty);
     this.entities = new DataView(empty);
     this.maxEntities = 0;
     this.map = new DataView(empty);
@@ -81,6 +93,16 @@ export class WasmInterface {
   }
   get mapSize(): number {
     return this.mapWidth * this.mapHeight;
+  }
+
+  get displayWidth(): number {
+    return this.i.gDisplayWidth.value;
+  }
+  get displayHeight(): number {
+    return this.i.gDisplayHeight.value;
+  }
+  get displaySize(): number {
+    return this.displayWidth * this.displayHeight;
   }
 
   private slice(start: number, length: number) {
@@ -144,6 +166,9 @@ export class WasmInterface {
       this.i.gEntitySize.value * this.maxEntities
     );
     this.map = this.slice(this.i.gMap.value, this.mapSize);
+    this.display = this.slice(this.i.gDisplay.value, this.displaySize);
+    this.displayFg = this.slice(this.i.gDisplayFG.value, this.displaySize * 4);
+    this.displayBg = this.slice(this.i.gDisplayBG.value, this.displaySize * 4);
     this.tileTypes = range(this.i.gTileTypeCount.value).map((id) =>
       this.tt(id)
     );

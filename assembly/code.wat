@@ -54,10 +54,16 @@
   (global $mapSize (export "gMapSize") i32 [[= mapWidth * mapHeight]])
   [[reserve Map mapSize gMap]]
 
-  (global $displaySize (export "gDisplaySize") (mut i32) (i32.const 0))
   (global $displayWidth (export "gDisplayWidth") (mut i32) (i32.const 0))
   (global $displayHeight (export "gDisplayHeight") (mut i32) (i32.const 0))
+  (global $displayMinX (export "gDisplayMinX") (mut i32) (i32.const 0))
+  (global $displayMinY (export "gDisplayMinY") (mut i32) (i32.const 0))
+  (global $displayMaxX (export "gDisplayMaxX") (mut i32) (i32.const 0))
+  (global $displayMaxY (export "gDisplayMaxY") (mut i32) (i32.const 0))
+  (global $displayEdge i32 (i32.const 8))
   [[reserve Display 100*100 gDisplay]]
+  [[reserve DisplayFG 100*100*4 gDisplayFG]]
+  [[reserve DisplayBG 100*100*4 gDisplayBG]]
 
   [[memory memory]]
 
@@ -65,9 +71,9 @@
     ;; TODO check $w * $h < sizeof_Display
     (global.set $displayWidth (local.get $w))
     (global.set $displayHeight (local.get $h))
-    (global.set $displaySize (i32.mul (local.get $w) (local.get $h)))
 
     (call $generateMap)
+    (call $render)
   )
 
   (func $fillMap (param $tid i32)
@@ -141,7 +147,7 @@
     (loop $loopY
       (local.set $x (i32.add (local.get $sx) (i32.const 1)))
       (loop $loopX
-        (i32.store8 (call $getTileXY (local.get $x) (local.get $y)) (global.get $ttFloor))
+        (i32.store8 (call $getMapXY (local.get $x) (local.get $y)) (global.get $ttFloor))
 
         (br_if $loopX (i32.ne
           (local.tee $x (i32.add (local.get $x) (i32.const 1)))
@@ -187,7 +193,7 @@
     (local.set $err (i32.add (local.get $dx) (local.get $dy)))
 
     (loop $draw
-      (i32.store8 (call $getTileXY (local.get $x0) (local.get $y0)) (global.get $ttFloor))
+      (i32.store8 (call $getMapXY (local.get $x0) (local.get $y0)) (global.get $ttFloor))
 
       (if (i32.and
         (i32.eq (local.get $x0) (local.get $x1))
@@ -331,6 +337,8 @@
         (global.get $maxRooms)
       ))
     )
+
+    (call $centreOnPlayer)
   )
 
   (func $initTestMap
@@ -376,7 +384,50 @@
     )
   )
 
-  (func $getTileXY (param $x i32) (param $y i32) (result i32)
+  (func $getDisplayXY (param $x i32) (param $y i32) (result i32)
+    (i32.add
+      (global.get $Display)
+      (i32.add
+        (i32.mul
+          (global.get $displayWidth)
+          (local.get $y)
+        )
+        (local.get $x)
+      )
+    )
+  )
+  (func $getDisplayFGXY (param $x i32) (param $y i32) (result i32)
+    (i32.add
+      (global.get $DisplayFG)
+      (i32.mul
+        (i32.add
+          (i32.mul
+            (global.get $displayWidth)
+            (local.get $y)
+          )
+          (local.get $x)
+        )
+        (i32.const 4)
+      )
+    )
+  )
+  (func $getDisplayBGXY (param $x i32) (param $y i32) (result i32)
+    (i32.add
+      (global.get $DisplayBG)
+      (i32.mul
+        (i32.add
+          (i32.mul
+            (global.get $displayWidth)
+            (local.get $y)
+          )
+          (local.get $x)
+        )
+        (i32.const 4)
+      )
+    )
+  )
+
+  (func $getMapXY (param $x i32) (param $y i32) (result i32)
     (i32.add
       (global.get $Map)
       (i32.add
@@ -400,7 +451,7 @@
   )
 
   (func $isWalkable (param $x i32) (param $y i32) (result i32)
-    [[load (call $getTileType (i32.load8_u (call $getTileXY (local.get $x) (local.get $y)))) Tile.walkable]]
+    [[load (call $getTileType (i32.load8_u (call $getMapXY (local.get $x) (local.get $y)))) Tile.walkable]]
   )
 
   (func $isInBounds (param $x i32) (param $y i32) (result i32)
@@ -460,10 +511,13 @@
       [[load $Action MoveAction.dx]]
       [[load $Action MoveAction.dy]]
     )
+
+    (if (call $playerNearEdge) (call $centreOnPlayer))
   )
 
   (func $applyAction
     (call_indirect $actions [[load $Action NoneAction.id]])
+    (call $render)
   )
 
   (func $convertToAction (param $ch i32)
@@ -514,5 +568,154 @@
       (global.get $chAt) (global.get $cWhite))
     (call $attachPosition (global.get $playerID)
       (local.get $x) (local.get $y))
+  )
+
+  (func $drawFg (param $x i32) (param $y i32) (param $ch i32) (param $fg i32)
+    (i32.store8
+      (call $getDisplayXY (local.get $x) (local.get $y))
+      (local.get $ch)
+    )
+    (i32.store
+      (call $getDisplayFGXY (local.get $x) (local.get $y))
+      (local.get $fg)
+    )
+  )
+  (func $drawFgBg (param $x i32) (param $y i32) (param $ch i32) (param $fg i32) (param $bg i32)
+    (call $drawFg (local.get $x) (local.get $y) (local.get $ch) (local.get $fg))
+    (i32.store
+      (call $getDisplayBGXY (local.get $x) (local.get $y))
+      (local.get $bg)
+    )
+  )
+
+  [[system RenderEntity Appearance Position]]
+    (local $x i32)
+    (local $y i32)
+
+    (local.set $x [[load $Position Position.x]])
+    (local.set $y [[load $Position Position.y]])
+
+    (if (call $isOnScreen (local.get $x) (local.get $y)) (then
+      (call $drawFg
+        (i32.sub (local.get $x) (global.get $displayMinX))
+        (i32.sub (local.get $y) (global.get $displayMinY))
+        [[load $Appearance Appearance.ch]]
+        [[load $Appearance Appearance.colour]]
+      )
+    ))
+  [[/system]]
+
+  (func $centreOnPlayer
+    (local $pos i32)
+    (local.set $pos (call $getPosition (global.get $playerID)))
+
+    (global.set $displayMinX (i32.sub
+      [[load $pos Position.x]]
+      (i32.div_u (global.get $displayWidth) (i32.const 2))
+    ))
+    (global.set $displayMinY (i32.sub
+      [[load $pos Position.y]]
+      (i32.div_u (global.get $displayHeight) (i32.const 2))
+    ))
+    (global.set $displayMaxX (i32.add
+      (global.get $displayMinX)
+      (global.get $displayWidth)
+    ))
+    (global.set $displayMaxY (i32.add
+      (global.get $displayMinY)
+      (global.get $displayHeight)
+    ))
+  )
+
+  (func $playerNearEdge (result i32)
+    (local $pos i32)
+    (local $dx i32)
+    (local $dy i32)
+
+    (local.set $pos (call $getPosition (global.get $playerID)))
+    (local.set $dx (i32.sub [[load $pos Position.x]] (global.get $displayMinX)))
+    (local.set $dy (i32.sub [[load $pos Position.y]] (global.get $displayMinY)))
+
+    (i32.or
+      (i32.or
+        (i32.lt_s (local.get $dx) (global.get $displayEdge))
+        (i32.ge_s (local.get $dx) (i32.sub (global.get $displayWidth) (global.get $displayEdge)))
+      )
+      (i32.or
+        (i32.lt_s (local.get $dy) (global.get $displayEdge))
+        (i32.ge_s (local.get $dy) (i32.sub (global.get $displayHeight) (global.get $displayEdge)))
+      )
+    )
+  )
+
+  (func $isOnScreen (param $x i32) (param $y i32) (result i32)
+    (i32.and
+      (i32.and
+        (i32.ge_s (local.get $x) (global.get $displayMinX))
+        (i32.lt_s (local.get $x) (global.get $displayMaxX))
+      )
+      (i32.and
+        (i32.ge_s (local.get $y) (global.get $displayMinY))
+        (i32.lt_s (local.get $y) (global.get $displayMaxY))
+      )
+    )
+  )
+
+  (func $isOnMap (param $x i32) (param $y i32) (result i32)
+    (i32.and
+      (i32.and
+        (i32.ge_s (local.get $x) (i32.const 0))
+        (i32.lt_s (local.get $x) (global.get $mapWidth))
+      )
+      (i32.and
+        (i32.ge_s (local.get $y) (i32.const 0))
+        (i32.lt_s (local.get $y) (global.get $mapHeight))
+      )
+    )
+  )
+
+  (func $renderDungeon
+    (local $x i32)
+    (local $y i32)
+    (local $dx i32)
+    (local $dy i32)
+    (local $tt i32)
+
+    (local.set $y (global.get $displayMinY))
+    (loop $loopY
+      (local.set $dy (i32.sub (local.get $y) (global.get $displayMinY)))
+
+      (local.set $x (global.get $displayMinX))
+      (loop $loopX
+        (local.set $dx (i32.sub (local.get $x) (global.get $displayMinX)))
+
+        (if (call $isOnMap (local.get $x) (local.get $y)) (then
+          (local.set $tt (call $getTileType (i32.load8_u (call $getMapXY (local.get $x) (local.get $y)))))
+          (call $drawFgBg
+            (local.get $dx) (local.get $dy)
+            [[load $tt Tile.ch]] [[load $tt Tile.fg]] [[load $tt Tile.bg]]
+          )
+        ) (else
+          (call $drawFgBg
+            (local.get $dx) (local.get $dy)
+            (i32.const 0) (i32.const 0) (i32.const 0)
+          )
+        ))
+
+        (br_if $loopX (i32.lt_s
+          (local.tee $x (i32.add (local.get $x) (i32.const 1)))
+          (global.get $displayMaxX)
+        ))
+      )
+      (br_if $loopY (i32.lt_s
+        (local.tee $y (i32.add (local.get $y) (i32.const 1)))
+        (global.get $displayMaxY)
+      ))
+    )
+  )
+
+  (func $render
+    (call $renderDungeon)
+    (call $sysRenderEntity)
   )
 )

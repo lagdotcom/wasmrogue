@@ -134,16 +134,20 @@ class Preprocessor {
     this.env = {};
     this.processors = {
       "=": this.evaluate.bind(this),
+      "=64": this.evaluate64.bind(this),
       align: this.align.bind(this),
       component: this.component.bind(this),
       consts: this.consts.bind(this),
       data: this.data.bind(this),
       eval: this.evaluate.bind(this),
+      eval64: this.evaluate64.bind(this),
       load: this.load.bind(this),
       memory: this.memory.bind(this),
       reserve: this.reserve.bind(this),
       store: this.store.bind(this),
       struct: this.struct.bind(this),
+      system: this.system.bind(this),
+      "/system": this.systemEnd.bind(this),
     };
 
     this.parseFunc = this.parseFunc.bind(this);
@@ -379,6 +383,11 @@ class Preprocessor {
     return this.evalConst(code, "i32");
   }
 
+  evaluate64(...parts: string[]) {
+    const code = parts.join(" ");
+    return this.evalConst(code, "i64");
+  }
+
   align(...parts: string[]) {
     const code = parts.join(" ");
     const size = this.evalNumber(code || "4");
@@ -497,6 +506,57 @@ class Preprocessor {
 
   [[store (local.get $entity) Entity.mask (${EntityMaskType}.xor [[load (local.get $entity) Entity.mask]] [[= $Mask_${name}]])]]
 )`;
+  }
+
+  system(name: string, ...components: string[]) {
+    for (let i = 0; i < components.length; i++) {
+      const cname = components[i];
+      if (!this.structures[cname])
+        throw this.error(`Unknown component: ${cname}`);
+    }
+
+    return [
+      this.genSystemFunction(name, components),
+      this.genDoFunction(name, components),
+    ].join("\n");
+  }
+
+  genSystemFunction(name: string, components: string[]) {
+    const mask = components
+      .map((cname) => this.env["Mask_" + cname] as number)
+      .reduce((a, b) => a | b);
+
+    return `(func $sys${name}
+    (local $eid i32)
+    (local.set $eid (i32.const 0))
+    (loop $entities
+      (if (${EntityMaskType}.eq (${EntityMaskType}.and
+        [[load (call $getEntity (local.get $eid)) Entity.mask]]
+        (${EntityMaskType}.const ${mask})
+      ) (${EntityMaskType}.const ${mask})) (then
+        (call $do${name} (local.get $eid)
+          ${components
+            .map((cname) => `(call $get${cname} (local.get $eid))`)
+            .join("\n          ")}
+        )
+      ))
+
+      (br_if $entities (i32.ne
+        (local.tee $eid (i32.add (local.get $eid) (i32.const 1)))
+        (global.get $maxEntities)
+      ))
+    )
+  )`;
+  }
+
+  genDoFunction(name: string, components: string[]) {
+    return `(func $do${name} (param $eid i32) ${components
+      .map((c) => `(param $${c} i32)`)
+      .join(" ")}`;
+  }
+
+  systemEnd() {
+    return ")";
   }
 }
 
