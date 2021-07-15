@@ -8,9 +8,6 @@
 
     }(wglt));
 
-    const range = (max) => Array.from(Array(max).keys());
-    const rng = (min, max) => Math.floor(Math.random() * (max - min + 1) + min);
-
     const keys = [wglt.exports.Keys.VK_LEFT, wglt.exports.Keys.VK_UP, wglt.exports.Keys.VK_RIGHT, wglt.exports.Keys.VK_DOWN, wglt.exports.Keys.VK_G];
     class Display {
         i;
@@ -18,19 +15,15 @@
         e;
         w;
         h;
-        entityIDs;
-        entities;
         term;
-        tiles;
         constructor(i, container) {
             this.i = i;
             this.container = container;
             this.e = document.createElement("canvas");
-            this.w = i.width;
-            this.h = i.height;
+            this.w = i.displayWidth;
+            this.h = i.displayHeight;
             this.term = new wglt.exports.Terminal(this.e, this.w, this.h);
             container.append(this.e);
-            this.entityIDs = range(i.maxEntities);
             this.refresh();
             this.term.update = this.update.bind(this);
             this.e.focus();
@@ -47,35 +40,17 @@
             if (k && this.i.input(k))
                 this.refresh();
         }
-        tile(x, y) {
-            const id = this.tiles[y * this.w + x];
-            const tt = this.i.tileTypes[id];
-            const [e] = this.entities.filter((e) => e.x === x && e.y === y);
-            if (e)
-                return [e.ch, e.colour, tt.bg];
-            return [tt.ch, tt.fg, tt.bg];
-        }
-        updateEntityList() {
-            // TODO is this good? lol
-            this.entities = this.entityIDs
-                .map((id) => this.i.entity(id))
-                .filter((e) => e.exists);
-        }
-        updateTiles() {
-            this.tiles = new Uint8Array(this.i.map.buffer, this.i.map.byteOffset);
-        }
         refresh() {
-            this.updateEntityList();
-            this.updateTiles();
-            this.render();
-        }
-        render() {
             const { term } = this;
-            // term.clear();
+            const { display, displayFg, displayBg } = this.i;
+            let i = 0;
             for (let y = 0; y < this.h; y++) {
                 for (let x = 0; x < this.w; x++) {
-                    const [ch, fg, bg] = this.tile(x, y);
+                    const ch = display.getUint8(i);
+                    const fg = displayFg.getUint32(i * 4, true);
+                    const bg = displayBg.getUint32(i * 4, true);
                     term.drawChar(x, y, ch, fg, bg);
+                    i++;
                 }
             }
         }
@@ -83,36 +58,77 @@
 
     var module = "code.wasm";
 
+    const range = (max) => Array.from(Array(max).keys());
+    const rng = (min, max) => Math.floor(Math.random() * (max - min + 1) + min);
+
     class WasmInterface {
         i;
+        bits;
+        display;
+        displayFg;
+        displayBg;
         entities;
         maxEntities;
         map;
         tileTypes;
         constructor(i) {
             this.i = i;
+            const empty = new ArrayBuffer(0);
+            this.bits = {};
+            this.display = new DataView(empty);
+            this.displayFg = new DataView(empty);
+            this.displayBg = new DataView(empty);
+            this.entities = new DataView(empty);
+            this.maxEntities = 0;
+            this.map = new DataView(empty);
+            this.tileTypes = [];
         }
-        get width() {
-            return this.i.gWidth.value;
+        get mapWidth() {
+            return this.i.gMapWidth.value;
         }
-        get height() {
-            return this.i.gHeight.value;
+        get mapHeight() {
+            return this.i.gMapHeight.value;
         }
-        get tileSize() {
-            return this.width * this.height;
+        get mapSize() {
+            return this.mapWidth * this.mapHeight;
+        }
+        get displayWidth() {
+            return this.i.gDisplayWidth.value;
+        }
+        get displayHeight() {
+            return this.i.gDisplayHeight.value;
+        }
+        get displaySize() {
+            return this.displayWidth * this.displayHeight;
         }
         slice(start, length) {
             return new DataView(this.i.memory.buffer, start, length);
         }
         entity(id) {
-            const eSize = this.i.gEntitySize.value;
-            const offset = id * eSize;
+            const mask = this.entities.getBigUint64(id * this.i.gEntitySize.value, true);
+            const e = { id };
+            if (mask & this.bits.Appearance)
+                e.Appearance = this.appearance(id);
+            if (mask & this.bits.Position)
+                e.Position = this.position(id);
+            return e;
+        }
+        appearance(id) {
+            const size = 5;
+            const offset = id * size + this.i.gAppearances.value;
+            const mem = this.slice(offset, size);
             return {
-                exists: this.entities.getUint8(offset) !== 0,
-                x: this.entities.getUint8(offset + 1),
-                y: this.entities.getUint8(offset + 2),
-                ch: this.entities.getUint8(offset + 3),
-                colour: this.entities.getUint32(offset + 4, true),
+                ch: mem.getUint8(0),
+                fg: mem.getUint32(1, true),
+            };
+        }
+        position(id) {
+            const size = 2;
+            const offset = id * size + this.i.gPositions.value;
+            const mem = this.slice(offset, size);
+            return {
+                x: mem.getUint8(0),
+                y: mem.getUint8(1),
             };
         }
         tt(id) {
@@ -131,8 +147,15 @@
             this.i.initialise(width, height);
             this.maxEntities = this.i.gMaxEntities.value;
             this.entities = this.slice(this.i.gEntities.value, this.i.gEntitySize.value * this.maxEntities);
-            this.map = this.slice(this.i.gMap.value, this.tileSize);
+            this.map = this.slice(this.i.gMap.value, this.mapSize);
+            this.display = this.slice(this.i.gDisplay.value, this.displaySize);
+            this.displayFg = this.slice(this.i.gDisplayFG.value, this.displaySize * 4);
+            this.displayBg = this.slice(this.i.gDisplayBG.value, this.displaySize * 4);
             this.tileTypes = range(this.i.gTileTypeCount.value).map((id) => this.tt(id));
+            this.bits = {
+                Appearance: this.i.Mask_Appearance.value,
+                Position: this.i.Mask_Position.value,
+            };
         }
         input(id) {
             return this.i.input(id);
@@ -143,7 +166,7 @@
     }).then(({ instance }) => new WasmInterface(instance.exports));
 
     getInterface().then((i) => {
-        const container = document.getElementById("container");
+        const container = document.getElementById("container") || document.body;
         window.i = i;
         i.initialise(60, 40);
         const d = new Display(i, container);
