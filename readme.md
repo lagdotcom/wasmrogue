@@ -20,6 +20,7 @@ The preprocessor (`src/build/preprocess.ts`) tries to be reasonably intelligent 
 Preprocessor commands:
 
 - `[[eval expression]]` runs `expression` in JavaScript and returns the result as `(i32.const whatever)`. Also aliased as `[[= ]]`.
+- `[[eval64 expression]]` is the same thing but results in an `i64`. Also aliased as `[[=64 ]]`. Thinking of refactoring this (maybe `[[= type ...]]`?)
 - `[[consts prefix start names...]]` defines an enumerated set of `(global)`s. It also defines `_Next` as one higher than the largest defined constant.
 - `[[struct name field:type...]]` defines a memory structure. It also defines `sizeof_name`.
 - `[[reserve name amount export]]` saves the position of the data pointer in a `(global)` then moves the data pointer `amount` ahead. `export` is optional.
@@ -28,30 +29,47 @@ Preprocessor commands:
 - `[[memory export]]` defines a `(memory)` big enough to fit all reserved space. `export` is optional.
 - `[[load pointer struct.field]]` reads a structure field using `pointer` as the start of the structure.
 - `[[store pointer struct.field value]]` writes a structure field using `pointer` as the start of the structure.
+- `[[component name field:type...]]` is like `[[struct]]` but it also defines a mask constant and functions to get, attach and detach components from entities.
+- `[[system Name component...]]` generates two functions:
+
+  - `sysName()` which runs the system on all matching entities
+  - `doName(id, component...)` which runs the system on one entity
+
+  It is ended by `[[/system]]`, which closes the function body for `doName`.
+
+`[[component]]` and `[[system]]` rely on the following environment:
+
+- `[[struct Entity mask:i64 ...]]`
+- `$getEntity(eid:i32): i32`
+- `$maxEntities: i32`
 
 The preprocessor's parsing mechanism is custom and weird. It shouldn't get in the way. It's okay to put commands inside other commands. It's also okay to put WASM code as command arguments, at least sometimes.
 
 ### ECS
 
-- Entity: `u8` exists, `i64` mask (bit mask of component presence, so up to 64 components possible)
-- Component: array of data specific to component
-- System: `i64` mask, `funcref` fn (preprocessor will have to do some trickery here to pass the components to the function)
+- Entity: `i64` mask (bit mask of component presence, so up to 64 components possible)
 
-In short I'm planning a duplicate of `[[struct]]` called `[[component]]` which will handle additional state (component id/mask) and a new processor `[[system name component...]] ... [[/system]]` which will define everything necessary. There will also need to be a way to inject a generic "run all systems" function into the code. Undecided on how to do this yet.
+  Might extend this with another `i64` later if I need more components. Maybe for Tag components?
+
+- Component: array of data specific to component
+- System: `sys*` functions
 
 ### Memory Layout
 
-My memory layout is dynamic because my preprocessor handles most of it. Here's what is in the current build:
+My memory layout is dynamic because my preprocessor handles it. Here's what is in the current build:
 
-| Start | Size     | Description    |
-| ----- | -------- | -------------- |
-| 0     | 11\*2    | Tile types     |
-| 24    | 1..3     | Current action |
-| 32    | 256\*8   | Entity data    |
-| 2080  | 32\*4    | Room data      |
-| 2208  | 100\*100 | Tilemap        |
-
-This will probably change a fair bit when the ECS appears.
+| Start | Size        | Description     |
+| ----- | ----------- | --------------- |
+| 0     | 11\*2       | Tile types      |
+| 24    | 1..3        | Current action  |
+| 32    | 256\*8      | Entity data     |
+| 2080  | 256\*5      | Appearance data |
+| 3360  | 256\*2      | Position data   |
+| 3872  | 32\*4       | Room data       |
+| 4000  | 100\*100    | Tilemap         |
+| 14000 | 100\*100    | Display (chars) |
+| 24000 | 100\*100\*4 | Display (fg)    |
+| 64000 | 100\*100\*4 | Display (bg)    |
 
 ### Actions
 
@@ -63,6 +81,10 @@ The equivalent of the tutorial's Action subclasses are stored like this:
 | 01  | `s8` dx `s8` dy | Move |
 
 ## Log
+
+### 2021-07-15
+
+I finished writing the ECS! I also moved rendering into the WASM, so now the interface doesn't have to give any info except for the display memory and the input function. It still does though, useful for debugging.
 
 ### 2021-07-13
 
