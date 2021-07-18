@@ -30,6 +30,7 @@
   [[struct Entity mask:i64]]
   (global $maxEntities (export "gMaxEntities") i32 (i32.const 256))
   (global $entitySize (export "gEntitySize") i32 [[= sizeof_Entity]])
+  (global $nextEntity (mut i32) (i32.const 1))
 
   [[component Appearance ch:u8 colour:i32]]
   [[component Position x:u8 y:u8]]
@@ -38,6 +39,7 @@
   (global $maxRoomSize i32 (i32.const 10))
   (global $minRoomSize i32 (i32.const 6))
   (global $maxRooms i32 (i32.const 32))
+  (global $maxMonstersPerRoom i32 (i32.const 2))
 
   [[struct NoneAction id:u8]]
   [[struct MoveAction id:u8 dx:s8 dy:s8]]
@@ -346,6 +348,7 @@
             (local.get $n)
           )
 
+          (call $placeEntities (local.get $n))
           (local.set $n (i32.add (local.get $n) (i32.const 1)))
         ))
       ))
@@ -358,6 +361,38 @@
 
     (call $centreOnPlayer)
     (call $updateFov)
+  )
+
+  (func $placeEntities (param $rid i32)
+    (local $r i32)
+    (local $i i32)
+    (local $max i32)
+    (local $x i32)
+    (local $y i32)
+
+    (local.set $r (call $getRoom (local.get $rid)))
+    (local.set $max (call $rng (i32.const 0) (global.get $maxMonstersPerRoom)))
+    (if (i32.eqz (local.get $max)) (return))
+
+    (loop $try
+      (local.set $x (call $rng
+        (i32.add [[load $r Room.x1]] (i32.const 1))
+        (i32.sub [[load $r Room.x2]] (i32.const 1))
+      ))
+      (local.set $y (call $rng
+        (i32.add [[load $r Room.y1]] (i32.const 1))
+        (i32.sub [[load $r Room.y2]] (i32.const 1))
+      ))
+
+      (if (i32.lt_s (call $getEntityAt (local.get $x) (local.get $y)) (i32.const 0))
+        (call $spawnEnemyAt (local.get $x) (local.get $y))
+      )
+
+      (br_if $try (i32.lt_u
+        (local.tee $i (i32.add (local.get $i) (i32.const 1)))
+        (local.get $max)
+      ))
+    )
   )
 
   (func $initTestMap
@@ -613,6 +648,60 @@
       (global.get $Entities)
       (i32.mul (local.get $id) [[= sizeof_Entity]])
     )
+  )
+
+  (func $getEntityAt (param $x i32) (param $y i32) (result i32)
+    (local $eid i32)
+    (local $pos i32)
+
+    (local.set $eid (i32.const 0))
+    (local.set $pos (global.get $Positions))
+    (loop $entities
+      (if (i32.and
+        (i32.eq (local.get $x) [[load $pos Position.x]])
+        (i32.eq (local.get $y) [[load $pos Position.y]])
+      ) (then
+        (local.get $eid)
+        (return)
+      ))
+
+      (local.set $pos (i32.add (local.get $pos) [[= sizeof_Position]]))
+      (br_if $entities (i32.le_u
+        (local.tee $eid (i32.add (local.get $eid) (i32.const 1)))
+        (global.get $nextEntity)
+      ))
+    )
+
+    (i32.const -1)
+  )
+
+  (func $spawnEntity (result i32)
+    global.get $nextEntity
+    (global.set $nextEntity (i32.add (global.get $nextEntity) (i32.const 1)))
+  )
+
+  (func $spawnEnemyAt (param $x i32) (param $y i32)
+    (local $roll i32)
+    (local $eid i32)
+
+    (local.set $roll (call $rng (i32.const 0) (i32.const 99)))
+
+    (local.set $eid (call $spawnEntity))
+    (call $attachPosition (local.get $eid) (local.get $x) (local.get $y))
+
+    (if (i32.le_u (local.get $roll) (i32.const 80)) (then
+      (call $constructOrc (local.get $eid))
+      (return)
+    ))
+
+    (call $constructTroll (local.get $eid))
+  )
+
+  (func $constructOrc (param $eid i32)
+    (call $attachAppearance (local.get $eid) [[= 'o']] [[= 0x3f7f3f00 ]])
+  )
+  (func $constructTroll (param $eid i32)
+    (call $attachAppearance (local.get $eid) [[= 'T']] [[= 0x007f0000 ]])
   )
 
   (func $makePlayer (param $x i32) (param $y i32)
