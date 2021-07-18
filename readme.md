@@ -58,18 +58,23 @@ The preprocessor's parsing mechanism is custom and weird. It shouldn't get in th
 
 My memory layout is dynamic because my preprocessor handles it. Here's what is in the current build:
 
-| Start | Size        | Description     |
-| ----- | ----------- | --------------- |
-| 0     | 11\*2       | Tile types      |
-| 24    | 1..3        | Current action  |
-| 32    | 256\*8      | Entity data     |
-| 2080  | 256\*5      | Appearance data |
-| 3360  | 256\*2      | Position data   |
-| 3872  | 32\*4       | Room data       |
-| 4000  | 100\*100    | Tilemap         |
-| 14000 | 100\*100    | Display (chars) |
-| 24000 | 100\*100\*4 | Display (fg)    |
-| 64000 | 100\*100\*4 | Display (bg)    |
+| Start  | Size        | Description     |
+| ------ | ----------- | --------------- |
+| 0      | 19\*2       | Tile types      |
+| 40     | 1..3        | Current action  |
+| 48     | 256\*8      | Entity data     |
+| 1280   | 256\*5      | Appearance data |
+| 3376   | 256\*2      | Position data   |
+| 3888   | 32\*4       | Room data       |
+| 4016   | 100\*100    | TileMap         |
+| 14016  | 100\*100    | VisibleMap      |
+| 24016  | 100\*100    | KnownMap        |
+| 34016  | 100\*100    | Display (chars) |
+| 44016  | 100\*100\*4 | Display (fg)    |
+| 84016  | 100\*100\*4 | Display (bg)    |
+| 124016 | -           | -               |
+
+So, my data currently fits in two WebAssembly memory pages (64kB each).
 
 ### Actions
 

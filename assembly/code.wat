@@ -14,13 +14,14 @@
   (global $kGenerate i32 [[= 'G']])
 
   (global $playerID (export "gPlayerID") (mut i32) (i32.const 0))
+  (global $visionRange i32 (i32.const 8))
 
-  [[struct Tile walkable:u8 transparent:u8 ch:u8 fg:i32 bg:i32]]
+  [[struct Tile walkable:u8 transparent:u8 ch:u8 fg:i32 bg:i32 fglight:i32 bglight:i32]]
   [[reserve TileTypes sizeof_Tile*2 gTileTypes]]
   [[align 8]]
   (data $tileTypeData (offset [[= TileTypes]])
-    [[data Tile walkable=1 transparent=1 ch='.' fg=0xffffff00 bg=0x32329600]]
-    [[data Tile ch='#' fg=0xffffff00 bg=0x00006400]]
+    [[data Tile walkable=1 transparent=1 ch='.' fg=0xffffff00 bg=0x32329600 fglight=0xffffff00 bglight=0xc8b43200]]
+    [[data Tile ch='#' fg=0xffffff00 bg=0x00006400 fglight=0xffffff00 bglight=0x826e3200]]
   )
   [[consts tt 0 Floor Wall]]
   (global $ttINVALID (export "gTileTypeCount") i32 [[= _Next]])
@@ -53,6 +54,8 @@
   (global $mapHeight (export "gMapHeight") i32 (i32.const 100))
   (global $mapSize (export "gMapSize") i32 [[= mapWidth * mapHeight]])
   [[reserve Map mapSize gMap]]
+  [[reserve VisibleMap mapSize]]
+  [[reserve ExploredMap mapSize]]
 
   (global $displayWidth (export "gDisplayWidth") (mut i32) (i32.const 0))
   (global $displayHeight (export "gDisplayHeight") (mut i32) (i32.const 0))
@@ -84,6 +87,21 @@
 
     (loop $fill
       (i32.store8 (local.get $i) (local.get $tid))
+      (br_if $fill (i32.ne
+        (local.tee $i (i32.add (local.get $i) (i32.const 1)))
+        (local.get $end)
+      ))
+    )
+  )
+
+  (func $clearVisibleMap
+    (local $i i32)
+    (local $end i32)
+    (local.set $i (global.get $VisibleMap))
+    (local.set $end (i32.add (global.get $VisibleMap) (global.get $mapSize)))
+
+    (loop $fill
+      (i32.store8 (local.get $i) (i32.const 0))
       (br_if $fill (i32.ne
         (local.tee $i (i32.add (local.get $i) (i32.const 1)))
         (local.get $end)
@@ -182,13 +200,13 @@
 
     (local.set $dx (call $abs (i32.sub (local.get $x1) (local.get $x0))))
     (if (i32.lt_u (local.get $x0) (local.get $x1))
-      (then (local.set $sx (i32.const 1)))
-      (else (local.set $sx (i32.const -1)))
+      (local.set $sx (i32.const 1))
+      (local.set $sx (i32.const -1))
     )
     (local.set $dy (i32.sub (i32.const 0) (call $abs (i32.sub (local.get $y1) (local.get $y0)))))
     (if (i32.lt_u (local.get $y0) (local.get $y1))
-      (then (local.set $sy (i32.const 1)))
-      (else (local.set $sy (i32.const -1)))
+      (local.set $sy (i32.const 1))
+      (local.set $sy (i32.const -1))
     )
     (local.set $err (i32.add (local.get $dx) (local.get $dy)))
 
@@ -198,7 +216,7 @@
       (if (i32.and
         (i32.eq (local.get $x0) (local.get $x1))
         (i32.eq (local.get $y0) (local.get $y1))
-      ) (then (return)))
+      ) (return))
 
       (local.set $e2 (i32.mul (local.get $err) (i32.const 2)))
       (if (i32.ge_s (local.get $e2) (local.get $dy))
@@ -339,6 +357,7 @@
     )
 
     (call $centreOnPlayer)
+    (call $updateFov)
   )
 
   (func $initTestMap
@@ -366,8 +385,8 @@
             (i32.eq (local.get $y) (local.get $lastY))
           )
         )
-          (then (i32.store8 (local.get $i) (global.get $ttWall)))
-          (else (i32.store8 (local.get $i) (global.get $ttFloor)))
+          (i32.store8 (local.get $i) (global.get $ttWall))
+          (i32.store8 (local.get $i) (global.get $ttFloor))
         )
 
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
@@ -440,6 +459,32 @@
     )
   )
 
+  (func $getVisibleMapXY (param $x i32) (param $y i32) (result i32)
+    (i32.add
+      (global.get $VisibleMap)
+      (i32.add
+        (i32.mul
+          (global.get $mapWidth)
+          (local.get $y)
+        )
+        (local.get $x)
+      )
+    )
+  )
+
+  (func $getExploredMapXY (param $x i32) (param $y i32) (result i32)
+    (i32.add
+      (global.get $ExploredMap)
+      (i32.add
+        (i32.mul
+          (global.get $mapWidth)
+          (local.get $y)
+        )
+        (local.get $x)
+      )
+    )
+  )
+
   (func $getTileType (param $id i32) (result i32)
     (i32.add
       (global.get $TileTypes)
@@ -452,6 +497,10 @@
 
   (func $isWalkable (param $x i32) (param $y i32) (result i32)
     [[load (call $getTileType (i32.load8_u (call $getMapXY (local.get $x) (local.get $y)))) Tile.walkable]]
+  )
+
+  (func $isTransparent (param $x i32) (param $y i32) (result i32)
+    [[load (call $getTileType (i32.load8_u (call $getMapXY (local.get $x) (local.get $y)))) Tile.transparent]]
   )
 
   (func $isInBounds (param $x i32) (param $y i32) (result i32)
@@ -484,6 +533,9 @@
       (then
         [[store $pos Position.x $x]]
         [[store $pos Position.y $y]]
+
+        ;; TODO only player
+        (call $updateFov)
       )
     )
   )
@@ -595,14 +647,16 @@
     (local.set $x [[load $Position Position.x]])
     (local.set $y [[load $Position Position.y]])
 
-    (if (call $isOnScreen (local.get $x) (local.get $y)) (then
-      (call $drawFg
+    (if (i32.and
+      (call $isOnScreen (local.get $x) (local.get $y))
+      (call $isVisible (local.get $x) (local.get $y))
+    ) (call $drawFg
         (i32.sub (local.get $x) (global.get $displayMinX))
         (i32.sub (local.get $y) (global.get $displayMinY))
         [[load $Appearance Appearance.ch]]
         [[load $Appearance Appearance.colour]]
       )
-    ))
+    )
   [[/system]]
 
   (func $centreOnPlayer
@@ -674,6 +728,29 @@
     )
   )
 
+  (func $isVisible (param $x i32) (param $y i32) (result i32)
+    (i32.load8_u
+      (i32.add
+        (global.get $VisibleMap)
+        (i32.add
+          (i32.mul (local.get $y) (global.get $mapWidth))
+          (local.get $x)
+        )
+      )
+    )
+  )
+  (func $isExplored (param $x i32) (param $y i32) (result i32)
+    (i32.load8_u
+      (i32.add
+        (global.get $ExploredMap)
+        (i32.add
+          (i32.mul (local.get $y) (global.get $mapWidth))
+          (local.get $x)
+        )
+      )
+    )
+  )
+
   (func $renderDungeon
     (local $x i32)
     (local $y i32)
@@ -691,9 +768,24 @@
 
         (if (call $isOnMap (local.get $x) (local.get $y)) (then
           (local.set $tt (call $getTileType (i32.load8_u (call $getMapXY (local.get $x) (local.get $y)))))
-          (call $drawFgBg
-            (local.get $dx) (local.get $dy)
-            [[load $tt Tile.ch]] [[load $tt Tile.fg]] [[load $tt Tile.bg]]
+
+          (if (call $isVisible (local.get $x) (local.get $y))
+            (then (call $drawFgBg
+              (local.get $dx) (local.get $dy)
+              [[load $tt Tile.ch]] [[load $tt Tile.fglight]] [[load $tt Tile.bglight]]
+            ))
+            (else
+              (if (call $isExplored (local.get $x) (local.get $y))
+                (call $drawFgBg
+                  (local.get $dx) (local.get $dy)
+                  [[load $tt Tile.ch]] [[load $tt Tile.fg]] [[load $tt Tile.bg]]
+                )
+                (call $drawFgBg
+                  (local.get $dx) (local.get $dy)
+                  (i32.const 0) (i32.const 0) (i32.const 0)
+                )
+              )
+            )
           )
         ) (else
           (call $drawFgBg
@@ -710,6 +802,145 @@
       (br_if $loopY (i32.lt_s
         (local.tee $y (i32.add (local.get $y) (i32.const 1)))
         (global.get $displayMaxY)
+      ))
+    )
+  )
+
+  ;; http://www.roguebasin.com/index.php/LOS_using_strict_definition
+  (func $applyLos (param $x0 i32) (param $y0 i32) (param $x1 i32) (param $y1 i32)
+    (local $sx i32)
+    (local $sy i32)
+    (local $xnext i32)
+    (local $ynext i32)
+    (local $dx i32)
+    (local $dy i32)
+    (local $dist f32)
+
+    (local.set $dx (i32.sub (local.get $x1) (local.get $x0)))
+    (local.set $dy (i32.sub (local.get $y1) (local.get $y0)))
+
+    (if (i32.lt_s (local.get $x0) (local.get $x1))
+      (local.set $sx (i32.const 1))
+      (local.set $sx (i32.const -1))
+    )
+    (if (i32.lt_s (local.get $y0) (local.get $y1))
+      (local.set $sy (i32.const 1))
+      (local.set $sy (i32.const -1))
+    )
+
+    (local.set $xnext (local.get $x0))
+    (local.set $ynext (local.get $y0))
+    (local.set $dist (f32.sqrt (f32.convert_i32_s (i32.add
+      (i32.mul (local.get $dx) (local.get $dx))
+      (i32.mul (local.get $dy) (local.get $dy))
+    ))))
+
+    (loop $ray
+      (if (i32.eqz (call $isInBounds (local.get $xnext) (local.get $ynext)))
+        (return)
+      )
+
+      (i32.store8 (call $getExploredMapXY (local.get $xnext) (local.get $ynext)) (i32.const 1))
+
+      (if (i32.eqz (call $isTransparent (local.get $xnext) (local.get $ynext)))
+        (return)
+      )
+
+      ;; if(abs(dy * (xnext - x0 + sx) - dx * (ynext - y0)) / dist < 0.5f)
+      (if (f32.lt
+        (f32.div (f32.convert_i32_u (call $abs
+          (i32.sub
+            (i32.mul (local.get $dy)
+              (i32.add (local.get $sx)
+                (i32.sub (local.get $xnext) (local.get $x0))
+              )
+            )
+            (i32.mul (local.get $dx)
+              (i32.sub (local.get $ynext) (local.get $y0))
+            )
+          )
+        )) (local.get $dist))
+        (f32.const 0.5)
+      ) (then
+        (local.set $xnext (i32.add (local.get $xnext) (local.get $sx)))
+      ) (else
+        ;; else if(abs(dy * (xnext - x0) - dx * (ynext - y0 + sy)) / dist < 0.5f)
+        (if (f32.lt
+          (f32.div (f32.convert_i32_u (call $abs
+            (i32.sub
+              (i32.mul (local.get $dy)
+                (i32.sub (local.get $xnext) (local.get $x0))
+              )
+              (i32.mul (local.get $dx)
+                (i32.add (local.get $sy)
+                  (i32.sub (local.get $ynext) (local.get $y0))
+                )
+              )
+            )
+          )) (local.get $dist))
+          (f32.const 0.5)
+        ) (then
+          (local.set $ynext (i32.add (local.get $ynext) (local.get $sy)))
+        ) (else
+          (local.set $xnext (i32.add (local.get $xnext) (local.get $sx)))
+          (local.set $ynext (i32.add (local.get $ynext) (local.get $sy)))
+        ))
+      ))
+
+      (i32.store8 (call $getExploredMapXY (local.get $xnext) (local.get $ynext)) (i32.const 1))
+      (i32.store8 (call $getVisibleMapXY (local.get $xnext) (local.get $ynext)) (i32.const 1))
+
+      (br_if $ray (i32.or
+        (i32.ne (local.get $xnext) (local.get $x1))
+        (i32.ne (local.get $ynext) (local.get $y1))
+      ))
+    )
+  )
+
+  (func $updateFov
+    (local $pos i32)
+    (local $x i32)
+    (local $y i32)
+    (local $i i32)
+    (local $j i32)
+    (local $radius2 i32)
+
+    (local.set $pos (call $getPosition (global.get $playerID)))
+    (local.set $x [[load $pos Position.x]])
+    (local.set $y [[load $pos Position.y]])
+
+    (call $clearVisibleMap)
+    (i32.store8 (call $getVisibleMapXY (local.get $x) (local.get $y)) (i32.const 1))
+
+    (local.set $i (i32.sub (i32.const 0) (global.get $visionRange)))
+    (local.set $radius2 (i32.mul (global.get $visionRange) (global.get $visionRange)))
+    (loop $loopI
+      (local.set $j (i32.sub (i32.const 0) (global.get $visionRange)))
+      (loop $loopJ
+        (if (i32.lt_s
+          (i32.add
+            (i32.mul (local.get $i) (local.get $i))
+            (i32.mul (local.get $j) (local.get $j))
+          )
+          (local.get $radius2)
+        )
+          (call $applyLos
+            (local.get $x)
+            (local.get $y)
+            (i32.add (local.get $x) (local.get $i))
+            (i32.add (local.get $y) (local.get $j))
+          )
+        )
+
+        (br_if $loopJ (i32.le_s
+          (local.tee $j (i32.add (local.get $j) (i32.const 1)))
+          (global.get $visionRange)
+        ))
+      )
+
+      (br_if $loopI (i32.le_s
+        (local.tee $i (i32.add (local.get $i) (i32.const 1)))
+        (global.get $visionRange)
       ))
     )
   )
