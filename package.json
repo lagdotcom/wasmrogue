@@ -9,7 +9,8 @@
     "wasm:debug": "wat2wasm build/code.wat --debug-names -o build/code.wasm",
     "wasm:watch": "ts-node src/build/wasm-watch.ts",
     "rollup": "rollup -c",
-    "watch": "rollup -cw"
+    "watch": "rollup -cw",
+    "build": "npm run wasm:pp && npm run wasm:build && npm run rollup"
   },
   "author": "Lag.Com <lagdotcom@gmail.com>",
   "license": "ISC",
