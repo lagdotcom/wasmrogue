@@ -111,6 +111,8 @@
                 e.Appearance = this.appearance(id);
             if (mask & this.bits.Position)
                 e.Position = this.position(id);
+            if (mask & this.bits.Solid)
+                e.Solid = true;
             return e;
         }
         appearance(id) {
@@ -141,6 +143,8 @@
                 ch: mem.getUint8(2),
                 fg: mem.getUint32(3, true),
                 bg: mem.getUint32(7, true),
+                fgLight: mem.getUint32(11, true),
+                bgLight: mem.getUint32(15, true),
             };
         }
         initialise(width, height) {
@@ -155,6 +159,7 @@
             this.bits = {
                 Appearance: this.i.Mask_Appearance.value,
                 Position: this.i.Mask_Position.value,
+                Solid: this.i.Mask_Solid.value,
             };
         }
         input(id) {
