@@ -1,6 +1,6 @@
 {
   "name": "wasmrogue",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "WASM rogue!",
   "main": "index.js",
   "scripts": {

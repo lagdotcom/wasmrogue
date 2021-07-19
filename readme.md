@@ -29,7 +29,7 @@ Preprocessor commands:
 - `[[memory export]]` defines a `(memory)` big enough to fit all reserved space. `export` is optional.
 - `[[load pointer struct.field]]` reads a structure field using `pointer` as the start of the structure.
 - `[[store pointer struct.field value]]` writes a structure field using `pointer` as the start of the structure.
-- `[[component name field:type...]]` is like `[[struct]]` but it also defines a mask constant and functions to get, attach and detach components from entities.
+- `[[component name field:type...]]` is like `[[struct]]` but it also defines a mask constant and functions to check presence, get, attach and detach components from entities.
 - `[[system Name component...]]` generates two functions:
 
   - `sysName()` which runs the system on all matching entities
@@ -86,6 +86,10 @@ The equivalent of the tutorial's Action subclasses are stored like this:
 | 01  | `s8` dx `s8` dy | Move |
 
 ## Log
+
+### 2021-07-19
+
+Forgot to write yesterday, but I added FOV (tutorial part 4) and started doing monster spawning (part 5). Today I finished that off and added a Solid "tag" component that prevents movement. Also, now it will clear the visible/explored/entity memory when generating a new dungeon.
 
 ### 2021-07-15
 

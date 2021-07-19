@@ -7,6 +7,8 @@ interface ModuleInterface {
   Mask_Position: WebAssembly.Global;
   gPositions: WebAssembly.Global;
 
+  Mask_Solid: WebAssembly.Global;
+
   gDisplay: WebAssembly.Global;
   gDisplayFG: WebAssembly.Global;
   gDisplayBG: WebAssembly.Global;
@@ -53,6 +55,7 @@ export interface REntity {
   id: number;
   Appearance?: RAppearance;
   Position?: RPosition;
+  Solid?: boolean;
 }
 
 export interface RTileType {
@@ -61,6 +64,8 @@ export interface RTileType {
   ch: number;
   fg: number;
   bg: number;
+  fgLight: number;
+  bgLight: number;
 }
 
 export class WasmInterface {
@@ -118,6 +123,7 @@ export class WasmInterface {
 
     if (mask & this.bits.Appearance) e.Appearance = this.appearance(id);
     if (mask & this.bits.Position) e.Position = this.position(id);
+    if (mask & this.bits.Solid) e.Solid = true;
 
     return e;
   }
@@ -155,6 +161,8 @@ export class WasmInterface {
       ch: mem.getUint8(2),
       fg: mem.getUint32(3, true),
       bg: mem.getUint32(7, true),
+      fgLight: mem.getUint32(11, true),
+      bgLight: mem.getUint32(15, true),
     };
   }
 
@@ -176,6 +184,7 @@ export class WasmInterface {
     this.bits = {
       Appearance: this.i.Mask_Appearance.value,
       Position: this.i.Mask_Position.value,
+      Solid: this.i.Mask_Solid.value,
     };
   }
 
