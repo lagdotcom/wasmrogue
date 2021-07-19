@@ -458,12 +458,29 @@ class Preprocessor {
     const [maskName] = this.define(`Mask_${name}`, mask);
     this.components.push(name);
 
+    if (fields.length) {
+      return [
+        genGlobal(maskName, EntityMaskType, mask, maskName),
+        this.genHasComponent(name),
+        this.genGetComponent(name),
+        this.genAttachComponent(name),
+        this.genDetachComponent(name),
+      ].join("\n");
+    }
+
     return [
       genGlobal(maskName, EntityMaskType, mask, maskName),
-      this.genGetComponent(name),
-      this.genAttachComponent(name),
-      this.genDetachComponent(name),
+      this.genHasComponent(name, "is"),
+      this.genSetTag(name),
+      this.genDetachComponent(name, "unset"),
     ].join("\n");
+  }
+
+  private genHasComponent(name: string, prefix = "has") {
+    return `(func $${prefix}${name} (param $eid ${EntityIDType}) (result i32)
+
+  (i64.gt_u (${EntityMaskType}.and [[load (call $getEntity (local.get $eid)) Entity.mask]] [[= $Mask_${name}]]) (i64.const 0))
+)`;
   }
 
   private genGetComponent(name: string) {
@@ -499,8 +516,17 @@ class Preprocessor {
 )`;
   }
 
-  private genDetachComponent(name: string) {
-    return `(func $detach${name} (param $eid ${EntityIDType})
+  private genSetTag(name: string) {
+    return `(func $set${name} (param $eid ${EntityIDType})
+  (local $entity i32)
+  (local.set $entity (call $getEntity (local.get $eid)))
+
+  [[store (local.get $entity) Entity.mask (${EntityMaskType}.or [[load (local.get $entity) Entity.mask]] [[= $Mask_${name}]])]]
+)`;
+  }
+
+  private genDetachComponent(name: string, prefix = "detach") {
+    return `(func $${prefix}${name} (param $eid ${EntityIDType})
   (local $entity i32)
   (local.set $entity (call $getEntity (local.get $eid)))
 

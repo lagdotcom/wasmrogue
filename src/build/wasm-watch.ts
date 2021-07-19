@@ -17,7 +17,7 @@ watchTree(
 
     try {
       console.log(execSync(scripts["wasm:pp"], { encoding: "utf-8" }));
-      console.log(execSync(scripts["wasm:build"], { encoding: "utf-8" }));
+      console.log(execSync(scripts["wasm:debug"], { encoding: "utf-8" }));
       console.log("ok");
     } catch {}
   }
