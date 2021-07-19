@@ -34,6 +34,7 @@
 
   [[component Appearance ch:u8 colour:i32]]
   [[component Position x:u8 y:u8]]
+  [[component Solid]]
 
   [[struct Room x1:u8 y1:u8 x2:u8 y2:u8]]
   (global $maxRoomSize i32 (i32.const 10))
@@ -109,6 +110,38 @@
         (local.get $end)
       ))
     )
+  )
+
+  (func $clearExploredMap
+    (local $i i32)
+    (local $end i32)
+    (local.set $i (global.get $ExploredMap))
+    (local.set $end (i32.add (global.get $ExploredMap) (global.get $mapSize)))
+
+    (loop $fill
+      (i32.store8 (local.get $i) (i32.const 0))
+      (br_if $fill (i32.ne
+        (local.tee $i (i32.add (local.get $i) (i32.const 1)))
+        (local.get $end)
+      ))
+    )
+  )
+
+  (func $clearEntities
+    (local $i i32)
+    (local $end i32)
+    (local.set $i (global.get $Entities))
+    (local.set $end (i32.add (global.get $Entities) [[= sizeof_Entities]]))
+
+    (loop $fill
+      (i64.store (local.get $i) (i64.const 0))
+      (br_if $fill (i32.ne
+        (local.tee $i (i32.add (local.get $i) (i32.const 8)))
+        (local.get $end)
+      ))
+    )
+
+    (global.set $nextEntity (i32.const 1))
   )
 
   (func $getRoom (param $id i32) (result i32)
@@ -307,6 +340,11 @@
     (local $h i32)
 
     (call $fillMap (global.get $ttWall))
+    (call $clearVisibleMap)
+    (call $clearExploredMap)
+
+    ;; TODO more sensible way of dealing with entities
+    (call $clearEntities)
 
     (local.set $i (i32.const 0))
     (local.set $n (i32.const 0))
@@ -559,13 +597,15 @@
     (local.set $pos (call $getPosition (local.get $eid)))
 
     (if (i32.and
-      (call $isWalkable
-        (local.tee $x (i32.add [[load $pos Position.x]] (local.get $mx)))
-        (local.tee $y (i32.add [[load $pos Position.y]] (local.get $my)))
+      (i32.and
+        (call $isWalkable
+          (local.tee $x (i32.add [[load $pos Position.x]] (local.get $mx)))
+          (local.tee $y (i32.add [[load $pos Position.y]] (local.get $my)))
+        )
+        (call $isInBounds (local.get $x) (local.get $y))
       )
-      (call $isInBounds (local.get $x) (local.get $y))
-    )
-      (then
+      (i32.lt_s (call $getBlockerAt (local.get $x) (local.get $y)) (i32.const 0))
+    ) (then
         [[store $pos Position.x $x]]
         [[store $pos Position.y $y]]
 
@@ -675,6 +715,34 @@
     (i32.const -1)
   )
 
+  (func $getBlockerAt (param $x i32) (param $y i32) (result i32)
+    (local $eid i32)
+    (local $pos i32)
+
+    (local.set $eid (i32.const 0))
+    (local.set $pos (global.get $Positions))
+    (loop $entities
+      (if (i32.and
+        (i32.and
+          (i32.eq (local.get $x) [[load $pos Position.x]])
+          (i32.eq (local.get $y) [[load $pos Position.y]])
+        )
+        (call $isSolid (local.get $eid))
+      ) (then
+        (local.get $eid)
+        (return)
+      ))
+
+      (local.set $pos (i32.add (local.get $pos) [[= sizeof_Position]]))
+      (br_if $entities (i32.le_u
+        (local.tee $eid (i32.add (local.get $eid) (i32.const 1)))
+        (global.get $nextEntity)
+      ))
+    )
+
+    (i32.const -1)
+  )
+
   (func $spawnEntity (result i32)
     global.get $nextEntity
     (global.set $nextEntity (i32.add (global.get $nextEntity) (i32.const 1)))
@@ -687,6 +755,7 @@
     (local.set $roll (call $rng (i32.const 0) (i32.const 99)))
 
     (local.set $eid (call $spawnEntity))
+    (call $setSolid (local.get $eid))
     (call $attachPosition (local.get $eid) (local.get $x) (local.get $y))
 
     (if (i32.le_u (local.get $roll) (i32.const 80)) (then
@@ -705,6 +774,7 @@
   )
 
   (func $makePlayer (param $x i32) (param $y i32)
+    (call $setSolid (global.get $playerID))
     (call $attachAppearance (global.get $playerID)
       (global.get $chAt) (global.get $cWhite))
     (call $attachPosition (global.get $playerID)
