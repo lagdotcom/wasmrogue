@@ -76,16 +76,11 @@ My memory layout is dynamic because my preprocessor handles it. Here's what is i
 
 So, my data currently fits in two WebAssembly memory pages (64kB each).
 
-### Actions
-
-The equivalent of the tutorial's Action subclasses are stored like this:
-
-| ID  | Arguments       | Type |
-| --- | --------------- | ---- |
-| 00  |                 | None |
-| 01  | `s8` dx `s8` dy | Move |
-
 ## Log
+
+### 2021-07-26
+
+Only slightly late, started on combat (part 6). Refactored action code a bit because it was annoying me.
 
 ### 2021-07-19
 

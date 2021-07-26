@@ -42,11 +42,9 @@
   (global $maxRooms i32 (i32.const 32))
   (global $maxMonstersPerRoom i32 (i32.const 2))
 
-  [[struct NoneAction id:u8]]
-  [[struct MoveAction id:u8 dx:s8 dy:s8]]
-  [[struct GenerateAction id:u8]]
+  [[struct Action id:u8 dx:s8 dy:s8 eid:i32]]
 
-  [[reserve Action Math.max(sizeof_NoneAction,sizeof_MoveAction,sizeof_GenerateAction)]]
+  [[reserve currentAction sizeof_Action]]
   [[align 8]]
   [[reserve Entities maxEntities*sizeof_Entity gEntities]]
   [[reserve Appearances maxEntities*sizeof_Appearance gAppearances]]
@@ -608,9 +606,6 @@
     ) (then
         [[store $pos Position.x $x]]
         [[store $pos Position.y $y]]
-
-        ;; TODO only player
-        (call $updateFov)
       )
     )
   )
@@ -619,66 +614,99 @@
     (call $convertToAction (local.get $ch))
     (call $applyAction)
 
-    [[load $Action NoneAction.id]]
+    [[load $currentAction Action.id]]
   )
 
-  (table $actions anyfunc (elem
+  (table $currentActions anyfunc (elem
     $applyNoAction
     $applyMoveAction
+    $applyBumpAction
+    $applyMeleeAction
     $generateMap
   ))
-  [[consts act 0 None Move Generate]]
+  [[consts act 0 None Move Bump Melee Generate]]
 
   (func $applyNoAction)
 
   (func $applyMoveAction
     (call $moveEntity
-      ;; TODO allow actions on arbitrary entities!
-      (global.get $playerID)
-      [[load $Action MoveAction.dx]]
-      [[load $Action MoveAction.dy]]
+      [[load $currentAction Action.eid]]
+      [[load $currentAction Action.dx]]
+      [[load $currentAction Action.dy]]
     )
 
     (if (call $playerNearEdge) (call $centreOnPlayer))
   )
 
+  (func $applyBumpAction
+    (local $pos i32)
+    (local.set $pos (call $getPosition [[load $currentAction Action.eid]]))
+
+    (if (i32.lt_s (call $getBlockerAt
+      (i32.add [[load $pos Position.x]] [[load $currentAction Action.dx]])
+      (i32.add [[load $pos Position.y]] [[load $currentAction Action.dy]])
+    ) (i32.const 0))
+      (call $applyMoveAction)
+      (call $applyMeleeAction)
+    )
+  )
+
+  (func $applyMeleeAction
+    (local $pos i32)
+    (local $enemy i32)
+    (local.set $pos (call $getPosition [[load $currentAction Action.eid]]))
+    (local.set $enemy (call $getBlockerAt
+      (i32.add [[load $pos Position.x]] [[load $currentAction Action.dx]])
+      (i32.add [[load $pos Position.y]] [[load $currentAction Action.dy]])
+    ))
+
+    ;; TODO
+  )
+
   (func $applyAction
-    (call_indirect $actions [[load $Action NoneAction.id]])
+    (call_indirect $currentActions [[load $currentAction Action.id]])
+
+    (call $enemyTurn)
+    (call $updateFov)
     (call $render)
   )
 
   (func $convertToAction (param $ch i32)
     ;; default to no action
-    [[store $Action NoneAction.id $actNone]]
+    [[store $currentAction Action.id $actNone]]
 
     ;; TODO convert to use tables?
     (if (i32.eq (local.get $ch) (global.get $kUp)) (then
-      [[store $Action MoveAction.id $actMove]]
-      [[store $Action MoveAction.dx 0]]
-      [[store $Action MoveAction.dy -1]]
+      [[store $currentAction Action.id $actBump]]
+      [[store $currentAction Action.eid $playerID]]
+      [[store $currentAction Action.dx 0]]
+      [[store $currentAction Action.dy -1]]
       (return)
     ))
     (if (i32.eq (local.get $ch) (global.get $kRight)) (then
-      [[store $Action MoveAction.id $actMove]]
-      [[store $Action MoveAction.dx 1]]
-      [[store $Action MoveAction.dy 0]]
+      [[store $currentAction Action.id $actBump]]
+      [[store $currentAction Action.eid $playerID]]
+      [[store $currentAction Action.dx 1]]
+      [[store $currentAction Action.dy 0]]
       (return)
     ))
     (if (i32.eq (local.get $ch) (global.get $kDown)) (then
-      [[store $Action MoveAction.id $actMove]]
-      [[store $Action MoveAction.dx 0]]
-      [[store $Action MoveAction.dy 1]]
+      [[store $currentAction Action.id $actBump]]
+      [[store $currentAction Action.eid $playerID]]
+      [[store $currentAction Action.dx 0]]
+      [[store $currentAction Action.dy 1]]
       (return)
     ))
     (if (i32.eq (local.get $ch) (global.get $kLeft)) (then
-      [[store $Action MoveAction.id $actMove]]
-      [[store $Action MoveAction.dx -1]]
-      [[store $Action MoveAction.dy 0]]
+      [[store $currentAction Action.id $actBump]]
+      [[store $currentAction Action.eid $playerID]]
+      [[store $currentAction Action.dx -1]]
+      [[store $currentAction Action.dy 0]]
       (return)
     ))
 
     (if (i32.eq (local.get $ch) (global.get $kGenerate)) (then
-      [[store $Action GenerateAction.id $actGenerate]]
+      [[store $currentAction Action.id $actGenerate]]
       (return)
     ))
   )
@@ -1107,5 +1135,9 @@
   (func $render
     (call $renderDungeon)
     (call $sysRenderEntity)
+  )
+
+  (func $enemyTurn
+    ;; TODO
   )
 )
