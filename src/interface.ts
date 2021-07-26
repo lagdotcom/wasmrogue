@@ -1,9 +1,14 @@
-import module from "../build/code.wasm";
+import mainUrl from "../build/code.wasm";
+import stdlibUrl from "../build/stdlib.wasm";
 import { range, rng } from "./utils";
 
 interface ModuleInterface {
   Mask_Appearance: WebAssembly.Global;
   gAppearances: WebAssembly.Global;
+  Mask_AI: WebAssembly.Global;
+  gAIs: WebAssembly.Global;
+  Mask_Fighter: WebAssembly.Global;
+  gFighters: WebAssembly.Global;
   Mask_Position: WebAssembly.Global;
   gPositions: WebAssembly.Global;
 
@@ -46,6 +51,17 @@ export interface RAppearance {
   fg: number;
 }
 
+export interface RAI {
+  fn: number;
+}
+
+export interface RFighter {
+  maxHp: number;
+  hp: number;
+  defence: number;
+  power: number;
+}
+
 export interface RPosition {
   x: number;
   y: number;
@@ -54,6 +70,8 @@ export interface RPosition {
 export interface REntity {
   id: number;
   Appearance?: RAppearance;
+  AI?: RAI;
+  Fighter?: RFighter;
   Position?: RPosition;
   Solid?: boolean;
 }
@@ -122,7 +140,10 @@ export class WasmInterface {
     const e: REntity = { id };
 
     if (mask & this.bits.Appearance) e.Appearance = this.appearance(id);
+    if (mask & this.bits.AI) e.AI = this.ai(id);
+    if (mask & this.bits.Fighter) e.Fighter = this.fighter(id);
     if (mask & this.bits.Position) e.Position = this.position(id);
+
     if (mask & this.bits.Solid) e.Solid = true;
 
     return e;
@@ -136,6 +157,29 @@ export class WasmInterface {
     return {
       ch: mem.getUint8(0),
       fg: mem.getUint32(1, true),
+    };
+  }
+
+  ai(id: number): RAI {
+    const size = 1;
+    const offset = id * size + this.i.gAIs.value;
+    const mem = this.slice(offset, size);
+
+    return {
+      fn: mem.getUint8(0),
+    };
+  }
+
+  fighter(id: number): RFighter {
+    const size = 16;
+    const offset = id * size + this.i.gFighters.value;
+    const mem = this.slice(offset, size);
+
+    return {
+      maxHp: mem.getUint32(0, true),
+      hp: mem.getUint32(4, true),
+      defence: mem.getUint32(8, true),
+      power: mem.getUint32(12, true),
     };
   }
 
@@ -183,6 +227,8 @@ export class WasmInterface {
 
     this.bits = {
       Appearance: this.i.Mask_Appearance.value,
+      AI: this.i.Mask_AI.value,
+      Fighter: this.i.Mask_Fighter.value,
       Position: this.i.Mask_Position.value,
       Solid: this.i.Mask_Solid.value,
     };
@@ -193,12 +239,17 @@ export class WasmInterface {
   }
 }
 
-const getInterface = () =>
-  WebAssembly.instantiateStreaming(fetch(module), {
-    host: { rng },
-  }).then(
-    ({ instance }) =>
-      new WasmInterface(instance.exports as unknown as ModuleInterface)
-  );
+const getWASM = (url: string, imports?: WebAssembly.Imports) =>
+  new Promise<WebAssembly.Exports>((resolve, reject) => {
+    WebAssembly.instantiateStreaming(fetch(url), imports)
+      .then(({ instance }) => resolve(instance.exports))
+      .catch(reject);
+  });
+
+async function getInterface() {
+  const stdlib = await getWASM(stdlibUrl);
+  const main = await getWASM(mainUrl, { stdlib, host: { rng } });
+  return new WasmInterface(main as unknown as ModuleInterface);
+}
 
 export default getInterface;

@@ -63,18 +63,21 @@ My memory layout is dynamic because my preprocessor handles it. Here's what is i
 | 0      | 19\*2       | Tile types      |
 | 40     | 1..3        | Current action  |
 | 48     | 256\*8      | Entity data     |
-| 1280   | 256\*5      | Appearance data |
-| 3376   | 256\*2      | Position data   |
-| 3888   | 32\*4       | Room data       |
-| 4016   | 100\*100    | TileMap         |
-| 14016  | 100\*100    | VisibleMap      |
-| 24016  | 100\*100    | KnownMap        |
-| 34016  | 100\*100    | Display (chars) |
-| 44016  | 100\*100\*4 | Display (fg)    |
-| 84016  | 100\*100\*4 | Display (bg)    |
-| 124016 | -           | -               |
+| 2096   | 256\*5      | Appearance data |
+| 3376   | 256\*1      | AI data         |
+| 3632   | 256\*16     | Fighter data    |
+| 7728   | 256\*2      | Position data   |
+| 8240   | 32\*4       | Room data       |
+| 8368   | 100\*100    | TileMap         |
+| 18368  | 100\*100    | VisibleMap      |
+| 28368  | 100\*100    | KnownMap        |
+| 38368  | 100\*100    | PathMap         |
+| 48368  | 100\*100    | Display (chars) |
+| 58368  | 100\*100\*4 | Display (fg)    |
+| 98368  | 100\*100\*4 | Display (bg)    |
+| 138368 | -           | -               |
 
-So, my data currently fits in two WebAssembly memory pages (64kB each).
+So, my data currently fits in three WebAssembly memory pages (64kB each).
 
 ## Log
 

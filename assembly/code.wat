@@ -1,4 +1,7 @@
 (module
+  (import "stdlib" "abs" (func $abs (param i32) (result i32)))
+  (import "stdlib" "max" (func $max (param i32) (param i32) (result i32)))
+
   ;; TODO make my own rng!
   (import "host" "rng" (func $rng (param i32) (param i32) (result i32)))
 
@@ -11,6 +14,7 @@
   (global $kUp i32 (i32.const 38))
   (global $kRight i32 (i32.const 39))
   (global $kDown i32 (i32.const 40))
+  (global $kWait i32 (i32.const 101))
   (global $kGenerate i32 [[= 'G']])
 
   (global $playerID (export "gPlayerID") (mut i32) (i32.const 0))
@@ -31,8 +35,11 @@
   (global $maxEntities (export "gMaxEntities") i32 (i32.const 256))
   (global $entitySize (export "gEntitySize") i32 [[= sizeof_Entity]])
   (global $nextEntity (mut i32) (i32.const 1))
+  (global $currentEntity (mut i32) (i32.const -1))
 
   [[component Appearance ch:u8 colour:i32]]
+  [[component AI fn:u8]]
+  [[component Fighter maxhp:i32 hp:i32 defence:i32 power:i32]]
   [[component Position x:u8 y:u8]]
   [[component Solid]]
 
@@ -42,12 +49,14 @@
   (global $maxRooms i32 (i32.const 32))
   (global $maxMonstersPerRoom i32 (i32.const 2))
 
-  [[struct Action id:u8 dx:s8 dy:s8 eid:i32]]
+  [[struct Action id:u8 dx:s8 dy:s8 eid:u8]]
 
   [[reserve currentAction sizeof_Action]]
   [[align 8]]
   [[reserve Entities maxEntities*sizeof_Entity gEntities]]
   [[reserve Appearances maxEntities*sizeof_Appearance gAppearances]]
+  [[reserve AIs maxEntities*sizeof_AI gAIs]]
+  [[reserve Fighters maxEntities*sizeof_Fighter gFighters]]
   [[reserve Positions maxEntities*sizeof_Position gPositions]]
   [[reserve Rooms maxRooms*sizeof_Room gRooms]]
 
@@ -57,6 +66,7 @@
   [[reserve Map mapSize gMap]]
   [[reserve VisibleMap mapSize]]
   [[reserve ExploredMap mapSize]]
+  [[reserve PathMap mapSize]]
 
   (global $displayWidth (export "gDisplayWidth") (mut i32) (i32.const 0))
   (global $displayHeight (export "gDisplayHeight") (mut i32) (i32.const 0))
@@ -71,6 +81,28 @@
 
   [[memory memory]]
 
+  ;; TODO would prefer to put these in stdlib, but then they don't reference the same memory...
+  (func $memset (param $addr i32) (param $ch i32) (param $size i32)
+    (loop $set
+      (i32.store8 (local.get $addr) (local.get $ch))
+      (local.set $addr (i32.add (local.get $addr) (i32.const 1)))
+      (br_if $set (i32.gt_u
+        (local.tee $size (i32.sub (local.get $size) (i32.const 1)))
+        (i32.const 0))
+      )
+    )
+  )
+  (func $memset64 (param $addr i32) (param $n i64) (param $size i32)
+    (loop $set
+      (i64.store (local.get $addr) (local.get $n))
+      (local.set $addr (i32.add (local.get $addr) (i32.const 8)))
+      (br_if $set (i32.gt_u
+        (local.tee $size (i32.sub (local.get $size) (i32.const 8)))
+        (i32.const 0))
+      )
+    )
+  )
+
   (func $initialise (export "initialise") (param $w i32) (param $h i32)
     ;; TODO check $w * $h < sizeof_Display
     (global.set $displayWidth (local.get $w))
@@ -81,64 +113,19 @@
   )
 
   (func $fillMap (param $tid i32)
-    (local $i i32)
-    (local $end i32)
-    (local.set $i (global.get $Map))
-    (local.set $end (i32.add (global.get $Map) (global.get $mapSize)))
-
-    (loop $fill
-      (i32.store8 (local.get $i) (local.get $tid))
-      (br_if $fill (i32.ne
-        (local.tee $i (i32.add (local.get $i) (i32.const 1)))
-        (local.get $end)
-      ))
-    )
+    (call $memset (global.get $Map) (local.get $tid) (global.get $mapSize))
   )
 
   (func $clearVisibleMap
-    (local $i i32)
-    (local $end i32)
-    (local.set $i (global.get $VisibleMap))
-    (local.set $end (i32.add (global.get $VisibleMap) (global.get $mapSize)))
-
-    (loop $fill
-      (i32.store8 (local.get $i) (i32.const 0))
-      (br_if $fill (i32.ne
-        (local.tee $i (i32.add (local.get $i) (i32.const 1)))
-        (local.get $end)
-      ))
-    )
+    (call $memset (global.get $VisibleMap) (i32.const 0) (global.get $mapSize))
   )
 
   (func $clearExploredMap
-    (local $i i32)
-    (local $end i32)
-    (local.set $i (global.get $ExploredMap))
-    (local.set $end (i32.add (global.get $ExploredMap) (global.get $mapSize)))
-
-    (loop $fill
-      (i32.store8 (local.get $i) (i32.const 0))
-      (br_if $fill (i32.ne
-        (local.tee $i (i32.add (local.get $i) (i32.const 1)))
-        (local.get $end)
-      ))
-    )
+    (call $memset (global.get $ExploredMap) (i32.const 0) (global.get $mapSize))
   )
 
   (func $clearEntities
-    (local $i i32)
-    (local $end i32)
-    (local.set $i (global.get $Entities))
-    (local.set $end (i32.add (global.get $Entities) [[= sizeof_Entities]]))
-
-    (loop $fill
-      (i64.store (local.get $i) (i64.const 0))
-      (br_if $fill (i32.ne
-        (local.tee $i (i32.add (local.get $i) (i32.const 8)))
-        (local.get $end)
-      ))
-    )
-
+    (call $memset64 (global.get $Entities) (i64.const 0) [[= sizeof_Entities]])
     (global.set $nextEntity (i32.const 1))
   )
 
@@ -211,16 +198,6 @@
         (local.get $ey))
       )
     )
-  )
-
-  (func $abs (param $n i32) (result i32)
-    (if (i32.lt_s (local.get $n) (i32.const 0))
-      (then
-        (i32.sub (i32.const 0) (local.get $n))
-        (return)
-      )
-    )
-    (local.get $n)
   )
 
   (func $carveLine (param $x0 i32) (param $y0 i32) (param $x1 i32) (param $y1 i32)
@@ -617,16 +594,22 @@
     [[load $currentAction Action.id]]
   )
 
-  (table $currentActions anyfunc (elem
+  (table $fnLookup anyfunc (elem
     $applyNoAction
+    $applyWaitAction
     $applyMoveAction
     $applyBumpAction
     $applyMeleeAction
     $generateMap
+
+    $applyNoneAI
+    $applyHostileAI
   ))
-  [[consts act 0 None Move Bump Melee Generate]]
+  [[consts act 0 None Wait Move Bump Melee Generate]]
+  [[consts ai actGenerate+1 None Hostile]]
 
   (func $applyNoAction)
+  (func $applyWaitAction)
 
   (func $applyMoveAction
     (call $moveEntity
@@ -660,13 +643,13 @@
       (i32.add [[load $pos Position.y]] [[load $currentAction Action.dy]])
     ))
 
-    ;; TODO
+    ;; TODO applyMeleeAction
   )
 
   (func $applyAction
-    (call_indirect $currentActions [[load $currentAction Action.id]])
+    (call_indirect $fnLookup [[load $currentAction Action.id]])
 
-    (call $enemyTurn)
+    (call $sysRunAI)
     (call $updateFov)
     (call $render)
   )
@@ -702,6 +685,11 @@
       [[store $currentAction Action.eid $playerID]]
       [[store $currentAction Action.dx -1]]
       [[store $currentAction Action.dy 0]]
+      (return)
+    ))
+
+    (if (i32.eq (local.get $ch) (global.get $kWait)) (then
+      [[store $currentAction Action.id $actWait]]
       (return)
     ))
 
@@ -796,15 +784,26 @@
 
   (func $constructOrc (param $eid i32)
     (call $attachAppearance (local.get $eid) [[= 'o']] [[= 0x3f7f3f00 ]])
+    (call $attachAI (local.get $eid) (global.get $aiHostile))
+    (call $attachFighter (local.get $eid)
+      (i32.const 10) (i32.const 10) (i32.const 0) (i32.const 3)
+    )
   )
   (func $constructTroll (param $eid i32)
     (call $attachAppearance (local.get $eid) [[= 'T']] [[= 0x007f0000 ]])
+    (call $attachAI (local.get $eid) (global.get $aiHostile))
+    (call $attachFighter (local.get $eid)
+      (i32.const 16) (i32.const 16) (i32.const 1) (i32.const 4)
+    )
   )
 
   (func $makePlayer (param $x i32) (param $y i32)
     (call $setSolid (global.get $playerID))
     (call $attachAppearance (global.get $playerID)
       (global.get $chAt) (global.get $cWhite))
+    (call $attachFighter (global.get $playerID)
+      (i32.const 32) (i32.const 32) (i32.const 2) (i32.const 5)
+    )
     (call $attachPosition (global.get $playerID)
       (local.get $x) (local.get $y))
   )
@@ -844,6 +843,11 @@
         [[load $Appearance Appearance.colour]]
       )
     )
+  [[/system]]
+
+  [[system RunAI AI]]
+    (global.set $currentEntity (local.get $eid))
+    (call_indirect $fnLookup [[load $AI AI.fn]])
   [[/system]]
 
   (func $centreOnPlayer
@@ -1137,7 +1141,39 @@
     (call $sysRenderEntity)
   )
 
-  (func $enemyTurn
-    ;; TODO
+  (func $applyNoneAI)
+
+  (func $applyHostileAI
+    (local $target i32)
+    (local $distance i32)
+    (local $pos i32)
+    (local $tpos i32)
+    (local $dx i32)
+    (local $dy i32)
+
+    (local.set $target (global.get $playerID))
+    (local.set $tpos (call $getPosition (local.get $target)))
+    (local.set $pos (call $getPosition (global.get $currentEntity)))
+
+    (local.set $dx (i32.sub [[load $tpos Position.x]] [[load $pos Position.x]]))
+    (local.set $dy (i32.sub [[load $tpos Position.y]] [[load $pos Position.y]]))
+    (local.set $distance (call $max (call $abs (local.get $dx)) (call $abs (local.get $dy))))
+
+    [[store $currentAction Action.eid $currentEntity]]
+
+    (if (call $isVisible [[load $pos Position.x]] [[load $pos Position.y]]) (then
+      (if (i32.le_s (local.get $distance) (i32.const 1)) (then
+        [[store $currentAction Action.id $actMelee]]
+        [[store $currentAction Action.dx $dx]]
+        [[store $currentAction Action.dy $dy]]
+        (call $applyMeleeAction)
+        (return)
+      ))
+
+      ;; TODO calculate path, if exists move
+    ))
+
+    [[store $currentAction Action.id $actWait]]
+    (call $applyWaitAction)
   )
 )

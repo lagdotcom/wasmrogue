@@ -2,7 +2,14 @@ import { Keys, Terminal } from "wglt";
 
 import { WasmInterface } from "./interface";
 
-const keys = [Keys.VK_LEFT, Keys.VK_UP, Keys.VK_RIGHT, Keys.VK_DOWN, Keys.VK_G];
+const keys = [
+  Keys.VK_LEFT,
+  Keys.VK_UP,
+  Keys.VK_RIGHT,
+  Keys.VK_DOWN,
+  Keys.VK_G,
+  Keys.VK_NUMPAD5,
+];
 
 export default class Display {
   e: HTMLCanvasElement;
