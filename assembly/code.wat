@@ -14,7 +14,20 @@
   (global $kUp i32 (i32.const 38))
   (global $kRight i32 (i32.const 39))
   (global $kDown i32 (i32.const 40))
-  (global $kWait i32 (i32.const 101))
+  (global $kWait i32 (i32.const 12))
+
+  (global $kNumLeft i32 (i32.const 100))
+  (global $kNumUp i32 (i32.const 104))
+  (global $kNumRight i32 (i32.const 102))
+  (global $kNumDown i32 (i32.const 98))
+  (global $kNumWait i32 (i32.const 101))
+
+  (global $kViLeft i32 (i32.const 72))
+  (global $kViUp i32 (i32.const 75))
+  (global $kViRight i32 (i32.const 76))
+  (global $kViDown i32 (i32.const 74))
+  (global $kViWait i32 (i32.const 190))
+
   (global $kGenerate i32 [[= 'G']])
 
   (global $playerID (export "gPlayerID") (mut i32) (i32.const 0))
@@ -664,32 +677,55 @@
     [[store $currentAction Action.eid $playerID]]
 
     ;; TODO convert to use tables?
-    (if (i32.eq (local.get $ch) (global.get $kUp)) (then
+    (if (i32.or (i32.or
+      (i32.eq (local.get $ch) (global.get $kUp))
+      (i32.eq (local.get $ch) (global.get $kNumUp)))
+      (i32.eq (local.get $ch) (global.get $kViUp)))
+    (then
       [[store $currentAction Action.id $actBump]]
       [[store $currentAction Action.dx 0]]
       [[store $currentAction Action.dy -1]]
       (return)
     ))
-    (if (i32.eq (local.get $ch) (global.get $kRight)) (then
+
+    (if (i32.or (i32.or
+      (i32.eq (local.get $ch) (global.get $kRight))
+      (i32.eq (local.get $ch) (global.get $kNumRight)))
+      (i32.eq (local.get $ch) (global.get $kViRight)))
+    (then
       [[store $currentAction Action.id $actBump]]
       [[store $currentAction Action.dx 1]]
       [[store $currentAction Action.dy 0]]
       (return)
     ))
-    (if (i32.eq (local.get $ch) (global.get $kDown)) (then
+
+    (if (i32.or (i32.or
+      (i32.eq (local.get $ch) (global.get $kDown))
+      (i32.eq (local.get $ch) (global.get $kNumDown)))
+      (i32.eq (local.get $ch) (global.get $kViDown)))
+    (then
       [[store $currentAction Action.id $actBump]]
       [[store $currentAction Action.dx 0]]
       [[store $currentAction Action.dy 1]]
       (return)
     ))
-    (if (i32.eq (local.get $ch) (global.get $kLeft)) (then
+
+    (if (i32.or (i32.or
+      (i32.eq (local.get $ch) (global.get $kLeft))
+      (i32.eq (local.get $ch) (global.get $kNumLeft)))
+      (i32.eq (local.get $ch) (global.get $kViLeft)))
+    (then
       [[store $currentAction Action.id $actBump]]
       [[store $currentAction Action.dx -1]]
       [[store $currentAction Action.dy 0]]
       (return)
     ))
 
-    (if (i32.eq (local.get $ch) (global.get $kWait)) (then
+    (if (i32.or (i32.or
+      (i32.eq (local.get $ch) (global.get $kWait))
+      (i32.eq (local.get $ch) (global.get $kNumWait)))
+      (i32.eq (local.get $ch) (global.get $kViWait)))
+    (then
       [[store $currentAction Action.id $actWait]]
       (return)
     ))

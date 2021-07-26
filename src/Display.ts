@@ -3,12 +3,29 @@ import { Keys, Terminal } from "wglt";
 import { WasmInterface } from "./interface";
 
 const keys = [
+  // Arrows
   Keys.VK_LEFT,
   Keys.VK_UP,
   Keys.VK_RIGHT,
   Keys.VK_DOWN,
-  Keys.VK_G,
+  Keys.VK_CLEAR,
+
+  // Numpad
+  Keys.VK_NUMPAD4,
+  Keys.VK_NUMPAD8,
+  Keys.VK_NUMPAD6,
+  Keys.VK_NUMPAD2,
   Keys.VK_NUMPAD5,
+
+  // VI keys
+  Keys.VK_H,
+  Keys.VK_K,
+  Keys.VK_L,
+  Keys.VK_J,
+  Keys.VK_PERIOD,
+
+  // other stuff
+  Keys.VK_G,
 ];
 
 export default class Display {
