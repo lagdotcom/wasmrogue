@@ -21,6 +21,8 @@ Preprocessor commands:
 
 - `[[eval expression]]` runs `expression` in JavaScript and returns the result as `(i32.const whatever)`. Also aliased as `[[= ]]`.
 - `[[eval64 expression]]` is the same thing but results in an `i64`. Also aliased as `[[=64 ]]`. Thinking of refactoring this (maybe `[[= type ...]]`?)
+- `[[string expression]]` is similar but it expects the result to be a string. It stores it in the string table and returns an offset to the data.
+- `[[strings]]` returns the content of the string table for filling a `(data)`.
 - `[[consts prefix start names...]]` defines an enumerated set of `(global)`s. It also defines `_Next` as one higher than the largest defined constant.
 - `[[struct name field:type...]]` defines a memory structure. It also defines `sizeof_name`.
 - `[[reserve name amount export]]` saves the position of the data pointer in a `(global)` then moves the data pointer `amount` ahead. `export` is optional.
@@ -36,6 +38,10 @@ Preprocessor commands:
   - `doName(id, component...)` which runs the system on one entity
 
   It is ended by `[[/system]]`, which closes the function body for `doName`.
+
+`[[string]]` relies on the following environment:
+
+- `$Strings: i32`
 
 `[[component]]` and `[[system]]` rely on the following environment:
 
@@ -63,19 +69,20 @@ My memory layout is dynamic because my preprocessor handles it. Here's what is i
 | 0      | 19\*2       | Tile types      |
 | 40     | 1..3        | Current action  |
 | 48     | 256\*8      | Entity data     |
-| 2096   | 256\*5      | Appearance data |
-| 3376   | 256\*1      | AI data         |
-| 3632   | 256\*16     | Fighter data    |
-| 7728   | 256\*2      | Position data   |
-| 8240   | 32\*4       | Room data       |
-| 8368   | 100\*100    | TileMap         |
-| 18368  | 100\*100    | VisibleMap      |
-| 28368  | 100\*100    | KnownMap        |
-| 38368  | 100\*100    | PathMap         |
-| 48368  | 100\*100    | Display (chars) |
-| 58368  | 100\*100\*4 | Display (fg)    |
-| 98368  | 100\*100\*4 | Display (bg)    |
-| 138368 | -           | -               |
+| 2096   | 256\*9      | Appearance data |
+| 4400   | 256\*1      | AI data         |
+| 4656   | 256\*16     | Fighter data    |
+| 8752   | 256\*2      | Position data   |
+| 9264   | 32\*4       | Room data       |
+| 9392   | 100\*100    | TileMap         |
+| 19392  | 100\*100    | VisibleMap      |
+| 29392  | 100\*100    | KnownMap        |
+| 39392  | 100\*100    | PathMap         |
+| 49392  | 100\*100    | Display (chars) |
+| 59592  | 100\*100\*4 | Display (fg)    |
+| 99392  | 100\*100\*4 | Display (bg)    |
+| 139392 | 1000        | Strings         |
+| 140392 | -           | -               |
 
 So, my data currently fits in three WebAssembly memory pages (64kB each).
 

@@ -39,6 +39,9 @@ interface ModuleInterface {
   gTileTypes: WebAssembly.Global;
   gTileTypeSize: WebAssembly.Global;
 
+  gStrings: WebAssembly.Global;
+  gStringsSize: WebAssembly.Global;
+
   memory: WebAssembly.Memory;
 
   initialise(w: number, h: number): void;
@@ -49,6 +52,7 @@ interface ModuleInterface {
 export interface RAppearance {
   ch: number;
   fg: number;
+  name: string;
 }
 
 export interface RAI {
@@ -94,6 +98,7 @@ export class WasmInterface {
   entities: DataView;
   maxEntities: number;
   map: DataView;
+  strings: DataView;
   tileTypes: RTileType[];
 
   constructor(private i: ModuleInterface) {
@@ -105,6 +110,7 @@ export class WasmInterface {
     this.entities = new DataView(empty);
     this.maxEntities = 0;
     this.map = new DataView(empty);
+    this.strings = new DataView(empty);
     this.tileTypes = [];
   }
 
@@ -132,6 +138,16 @@ export class WasmInterface {
     return new DataView(this.i.memory.buffer, start, length);
   }
 
+  private string(offset: number) {
+    const bytes: number[] = [];
+    for (offset -= this.i.gStrings.value; ; offset++) {
+      const ch = this.strings.getUint8(offset);
+
+      if (ch === 0) return String.fromCharCode(...bytes);
+      bytes.push(ch);
+    }
+  }
+
   entity(id: number): REntity {
     const mask = this.entities.getBigUint64(
       id * this.i.gEntitySize.value,
@@ -150,13 +166,14 @@ export class WasmInterface {
   }
 
   appearance(id: number): RAppearance {
-    const size = 5;
+    const size = 9;
     const offset = id * size + this.i.gAppearances.value;
     const mem = this.slice(offset, size);
 
     return {
       ch: mem.getUint8(0),
       fg: mem.getUint32(1, true),
+      name: this.string(mem.getUint32(5, true)),
     };
   }
 
@@ -221,6 +238,7 @@ export class WasmInterface {
     this.display = this.slice(this.i.gDisplay.value, this.displaySize);
     this.displayFg = this.slice(this.i.gDisplayFG.value, this.displaySize * 4);
     this.displayBg = this.slice(this.i.gDisplayBG.value, this.displaySize * 4);
+    this.strings = this.slice(this.i.gStrings.value, this.i.gStringsSize.value);
     this.tileTypes = range(this.i.gTileTypeCount.value).map((id) =>
       this.tt(id)
     );

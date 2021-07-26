@@ -37,7 +37,7 @@
   (global $nextEntity (mut i32) (i32.const 1))
   (global $currentEntity (mut i32) (i32.const -1))
 
-  [[component Appearance ch:u8 colour:i32]]
+  [[component Appearance ch:u8 colour:i32 name:i32]]
   [[component AI fn:u8]]
   [[component Fighter maxhp:i32 hp:i32 defence:i32 power:i32]]
   [[component Position x:u8 y:u8]]
@@ -78,6 +78,10 @@
   [[reserve Display 100*100 gDisplay]]
   [[reserve DisplayFG 100*100*4 gDisplayFG]]
   [[reserve DisplayBG 100*100*4 gDisplayBG]]
+
+  ;; TODO make sizeof_Strings dynamic
+  [[reserve Strings 1000 gStrings]]
+  (global $stringsSize (export "gStringsSize") i32 [[= sizeof_Strings]])
 
   [[memory memory]]
 
@@ -657,32 +661,29 @@
   (func $convertToAction (param $ch i32)
     ;; default to no action
     [[store $currentAction Action.id $actNone]]
+    [[store $currentAction Action.eid $playerID]]
 
     ;; TODO convert to use tables?
     (if (i32.eq (local.get $ch) (global.get $kUp)) (then
       [[store $currentAction Action.id $actBump]]
-      [[store $currentAction Action.eid $playerID]]
       [[store $currentAction Action.dx 0]]
       [[store $currentAction Action.dy -1]]
       (return)
     ))
     (if (i32.eq (local.get $ch) (global.get $kRight)) (then
       [[store $currentAction Action.id $actBump]]
-      [[store $currentAction Action.eid $playerID]]
       [[store $currentAction Action.dx 1]]
       [[store $currentAction Action.dy 0]]
       (return)
     ))
     (if (i32.eq (local.get $ch) (global.get $kDown)) (then
       [[store $currentAction Action.id $actBump]]
-      [[store $currentAction Action.eid $playerID]]
       [[store $currentAction Action.dx 0]]
       [[store $currentAction Action.dy 1]]
       (return)
     ))
     (if (i32.eq (local.get $ch) (global.get $kLeft)) (then
       [[store $currentAction Action.id $actBump]]
-      [[store $currentAction Action.eid $playerID]]
       [[store $currentAction Action.dx -1]]
       [[store $currentAction Action.dy 0]]
       (return)
@@ -783,14 +784,14 @@
   )
 
   (func $constructOrc (param $eid i32)
-    (call $attachAppearance (local.get $eid) [[= 'o']] [[= 0x3f7f3f00 ]])
+    (call $attachAppearance (local.get $eid) [[= 'o']] [[= 0x3f7f3f00 ]] [[s "Orc"]])
     (call $attachAI (local.get $eid) (global.get $aiHostile))
     (call $attachFighter (local.get $eid)
       (i32.const 10) (i32.const 10) (i32.const 0) (i32.const 3)
     )
   )
   (func $constructTroll (param $eid i32)
-    (call $attachAppearance (local.get $eid) [[= 'T']] [[= 0x007f0000 ]])
+    (call $attachAppearance (local.get $eid) [[= 'T']] [[= 0x007f0000 ]] [[s "Troll"]])
     (call $attachAI (local.get $eid) (global.get $aiHostile))
     (call $attachFighter (local.get $eid)
       (i32.const 16) (i32.const 16) (i32.const 1) (i32.const 4)
@@ -800,7 +801,8 @@
   (func $makePlayer (param $x i32) (param $y i32)
     (call $setSolid (global.get $playerID))
     (call $attachAppearance (global.get $playerID)
-      (global.get $chAt) (global.get $cWhite))
+      (global.get $chAt) (global.get $cWhite) [[s "you"]]
+    )
     (call $attachFighter (global.get $playerID)
       (i32.const 32) (i32.const 32) (i32.const 2) (i32.const 5)
     )
@@ -1141,7 +1143,11 @@
     (call $sysRenderEntity)
   )
 
-  (func $applyNoneAI)
+  (func $applyNoneAI
+    [[store $currentAction Action.eid $currentEntity]]
+    [[store $currentAction Action.id $actWait]]
+    (call $applyWaitAction)
+  )
 
   (func $applyHostileAI
     (local $target i32)
@@ -1175,5 +1181,9 @@
 
     [[store $currentAction Action.id $actWait]]
     (call $applyWaitAction)
+  )
+
+  (data $stringData (offset [[= Strings]])
+    [[strings]]
   )
 )

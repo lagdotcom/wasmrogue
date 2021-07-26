@@ -129,6 +129,8 @@ class Preprocessor {
   processors: Record<string, Processor>;
   ptr!: number;
   structures!: Record<string, Structure>;
+  stringData!: string;
+  stringOffsets!: Record<string, number>;
 
   constructor(public verbose: boolean = false) {
     this.env = {};
@@ -144,7 +146,11 @@ class Preprocessor {
       load: this.load.bind(this),
       memory: this.memory.bind(this),
       reserve: this.reserve.bind(this),
+      s: this.string.bind(this),
       store: this.store.bind(this),
+      str: this.string.bind(this),
+      string: this.string.bind(this),
+      strings: this.strings.bind(this),
       struct: this.struct.bind(this),
       system: this.system.bind(this),
       "/system": this.systemEnd.bind(this),
@@ -165,6 +171,8 @@ class Preprocessor {
     this.global = [];
     this.local = [];
     this.ptr = 0;
+    this.stringData = "";
+    this.stringOffsets = {};
     this.structures = {};
   }
 
@@ -583,6 +591,24 @@ class Preprocessor {
 
   systemEnd() {
     return ")";
+  }
+
+  string(...value: string[]) {
+    const src = value.join(" ");
+    const result = this.eval(src);
+    if (typeof result !== "string") throw this.error(`Not a string: ${src}`);
+
+    if (!(result in this.stringOffsets)) {
+      const offset = this.env.Strings + this.stringData.length;
+      this.stringData += result + "\0";
+      this.stringOffsets[result] = offset;
+    }
+
+    return `(i32.const ${this.stringOffsets[result]})`;
+  }
+
+  strings() {
+    return `"${this.stringData.replaceAll("\0", "\\00")}"`;
   }
 }
 
