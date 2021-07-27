@@ -153,18 +153,15 @@
     (i32.store8 (local.tee $s (global.get $itoaStringEnd)) (i32.const 0))
     (i32.store8 (i32.sub (local.get $s) (i32.const 1)) [[= '0']])
 
-    (local.set $mod (i32.const 10))
+    (local.set $mod (i32.const 1))
     (loop $digits
-      (local.set $digit (i32.rem_u (local.get $n) (local.get $mod)))
+      (local.set $digit (i32.rem_u (i32.div_u (local.get $n) (local.get $mod)) (i32.const 10)))
 
       ;; *s-- = digit + '0'
       (i32.store8 (local.tee $s (i32.sub (local.get $s) (i32.const 1))) (i32.add (local.get $digit) [[= '0']]))
 
-      ;; remove from total
-      (local.set $n (i32.sub (local.get $n) (local.get $digit)))
-
       (local.set $mod (i32.mul (local.get $mod) (i32.const 10)))
-      (br_if $digits (i32.gt_u (local.get $n) (i32.const 0)))
+      (br_if $digits (i32.ge_u (local.get $n) (local.get $mod)))
     )
 
     (local.get $s)
@@ -1275,6 +1272,8 @@
 
     (call $renderDungeon)
     (call $sysRenderEntity)
+
+    (call $renderUI)
   )
 
   (func $applyNoneAI
@@ -1351,6 +1350,37 @@
     [[attach $eid Appearance ch='%' colour=0xbf000000 layer=layerCorpse name="corpse"]]
     (call $unsetSolid (local.get $eid))
     (call $detachAI (local.get $eid))
+  )
+
+  (func $puts (param $s i32) (param $x i32) (param $y i32) (param $fg i32) (param $bg i32)
+    (local $ch i32)
+
+    (loop $str
+      (local.set $ch (i32.load8_u (local.get $s)))
+      (if (i32.eqz (local.get $ch)) (return))
+
+      (call $drawFgBg (local.get $x) (local.get $y) (local.get $ch) (local.get $fg) (local.get $bg))
+
+      (local.set $s (i32.add (local.get $s) (i32.const 1)))
+      (local.set $x (i32.add (local.get $x) (i32.const 1)))
+      (br $str)
+    )
+  )
+
+  (func $renderUI
+    (local $s i32)
+    (local $pc i32)
+    (local $y i32)
+
+    (local.set $pc (call $getFighter (global.get $playerID)))
+    (local.set $y (i32.sub (global.get $displayHeight) (i32.const 2)))
+
+    (local.set $s (global.get $tempString))
+    (local.set $s (call $strcpy (local.get $s) [[s "HP: "]]))
+    (local.set $s (call $strcpy (local.get $s) (call $itoa [[load $pc Fighter.hp]])))
+    (local.set $s (call $strcpy (local.get $s) [[s "/"]]))
+    (local.set $s (call $strcpy (local.get $s) (call $itoa [[load $pc Fighter.maxhp]])))
+    (call $puts (global.get $tempString) (i32.const 1) (local.get $y) [[= 0xcccccc00]] [[= 0x00000000]])
   )
 
   (data $stringData (offset [[= Strings]])
