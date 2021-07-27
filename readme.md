@@ -82,9 +82,11 @@ My memory layout is dynamic because my preprocessor handles it. Here's what is i
 | 49648  | 100\*100    | Display (chars) |
 | 59648  | 100\*100\*4 | Display (fg)    |
 | 99648  | 100\*100\*4 | Display (bg)    |
-| 139648 | 1000        | Strings         |
-| 140648 | 100         | temp string     |
-| 140748 | 20          | temp (itoa)     |
+| 139648 | 100\*100\   | Display (layer) |
+| 149648 | 1000        | Strings         |
+| 150648 | 100         | temp string     |
+| 150748 | 20          | temp (itoa)     |
+| 150768 | -           | -               |
 
 So, my data currently fits in three WebAssembly memory pages (64kB each).
 

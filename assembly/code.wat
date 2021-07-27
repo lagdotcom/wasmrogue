@@ -52,7 +52,7 @@
   (global $nextEntity (mut i32) (i32.const 1))
   (global $currentEntity (mut i32) (i32.const -1))
 
-  [[consts layer 0 Corpse Item Actor]]
+  [[consts layer 0 Empty Corpse Item Actor]]
 
   [[component Appearance ch:u8 layer:u8 colour:i32 name:i32]]
   [[component AI fn:u8]]
@@ -96,6 +96,8 @@
   [[reserve Display 100*100 gDisplay]]
   [[reserve DisplayFG 100*100*4 gDisplayFG]]
   [[reserve DisplayBG 100*100*4 gDisplayBG]]
+  ;; TODO remove the need for this???
+  [[reserve DisplayLayer 100*100]]
 
   ;; TODO make sizeof_Strings dynamic
   [[reserve Strings 1000 gStrings]]
@@ -408,7 +410,8 @@
       (if (i32.eqz (local.get $n)) (then
         (call $carveRoom (i32.const 0))
 
-        (call $makePlayer
+        (call $constructPlayer
+          (global.get $playerID)
           (call $getRoomCX (i32.const 0))
           (call $getRoomCY (i32.const 0))
         )
@@ -552,6 +555,18 @@
           (local.get $x)
         )
         (i32.const 4)
+      )
+    )
+  )
+  (func $getDisplayLayerXY (param $x i32) (param $y i32) (result i32)
+    (i32.add
+      (global.get $DisplayLayer)
+      (i32.add
+        (i32.mul
+          (global.get $displayWidth)
+          (local.get $y)
+        )
+        (local.get $x)
       )
     )
   )
@@ -914,12 +929,12 @@
     [[attach $eid Fighter maxhp=16 hp=16 defence=1 power=4]]
   )
 
-  (func $makePlayer (param $x i32) (param $y i32)
-    (call $setPlayer (global.get $playerID))
-    (call $setSolid (global.get $playerID))
-    [[attach $playerID Appearance ch='@' colour=0xffffff00 layer=layerActor name="Player"]]
-    [[attach $playerID Fighter maxhp=32 hp=32 defence=2 power=5]]
-    [[attach $playerID Position x=$x y=$y]]
+  (func $constructPlayer (param $eid i32) (param $x i32) (param $y i32)
+    (call $setPlayer (local.get $eid))
+    (call $setSolid (local.get $eid))
+    [[attach $eid Appearance ch='@' colour=0xffffff00 layer=layerActor name="Player"]]
+    [[attach $eid Fighter maxhp=32 hp=32 defence=2 power=5]]
+    [[attach $eid Position x=$x y=$y]]
   )
 
   (func $drawFg (param $x i32) (param $y i32) (param $ch i32) (param $fg i32)
@@ -943,20 +958,25 @@
   [[system RenderEntity Appearance Position]]
     (local $x i32)
     (local $y i32)
+    (local $display i32)
 
     (local.set $x [[load $Position Position.x]])
     (local.set $y [[load $Position Position.y]])
+    (local.set $display (call $getDisplayLayerXY (local.get $x) (local.get $y)))
 
-    (if (i32.and
+    (if (i32.and (i32.and
       (call $isOnScreen (local.get $x) (local.get $y))
-      (call $isVisible (local.get $x) (local.get $y))
-    ) (call $drawFg
+      (call $isVisible (local.get $x) (local.get $y)))
+      (i32.gt_s [[load $Appearance Appearance.layer]] (i32.load8_s (local.get $display)))
+    ) (then
+      (call $drawFg
         (i32.sub (local.get $x) (global.get $displayMinX))
         (i32.sub (local.get $y) (global.get $displayMinY))
         [[load $Appearance Appearance.ch]]
         [[load $Appearance Appearance.colour]]
       )
-    )
+      (i32.store8 (local.get $display) [[load $Appearance Appearance.layer]])
+    ))
   [[/system]]
 
   [[system RunAI AI]]
@@ -1251,6 +1271,8 @@
   )
 
   (func $render
+    (call $memset (global.get $DisplayLayer) [[= layerEmpty]] [[= sizeof_DisplayLayer]])
+
     (call $renderDungeon)
     (call $sysRenderEntity)
   )
