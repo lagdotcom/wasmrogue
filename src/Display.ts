@@ -25,6 +25,7 @@ const keys = [
   Keys.VK_PERIOD,
 
   // other stuff
+  Keys.VK_ESCAPE,
   Keys.VK_G,
 ];
 

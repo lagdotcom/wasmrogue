@@ -12,7 +12,10 @@ interface ModuleInterface {
   Mask_Position: WebAssembly.Global;
   gPositions: WebAssembly.Global;
 
+  Mask_Player: WebAssembly.Global;
   Mask_Solid: WebAssembly.Global;
+
+  gGameMode: WebAssembly.Global;
 
   gDisplay: WebAssembly.Global;
   gDisplayFG: WebAssembly.Global;
@@ -78,6 +81,7 @@ export interface REntity {
   AI?: RAI;
   Fighter?: RFighter;
   Position?: RPosition;
+  Player?: boolean;
   Solid?: boolean;
 }
 
@@ -161,6 +165,7 @@ export class WasmInterface {
     if (mask & this.bits.Fighter) e.Fighter = this.fighter(id);
     if (mask & this.bits.Position) e.Position = this.position(id);
 
+    if (mask & this.bits.Player) e.Player = true;
     if (mask & this.bits.Solid) e.Solid = true;
 
     return e;
@@ -250,6 +255,7 @@ export class WasmInterface {
       AI: this.i.Mask_AI.value,
       Fighter: this.i.Mask_Fighter.value,
       Position: this.i.Mask_Position.value,
+      Player: this.i.Mask_Player.value,
       Solid: this.i.Mask_Solid.value,
     };
   }

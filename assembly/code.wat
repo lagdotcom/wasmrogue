@@ -29,7 +29,11 @@
   (global $kViDown i32 (i32.const 74))
   (global $kViWait i32 (i32.const 190))
 
+  (global $kEscape i32 (i32.const 27))
   (global $kGenerate i32 [[= 'G']])
+
+  [[consts gm 0 Dungeon Dead]]
+  (global $gameMode (export "gGameMode") (mut i32) [[= gmDungeon]])
 
   ;; TODO remove me
   (global $playerID (export "gPlayerID") (mut i32) (i32.const 0))
@@ -436,6 +440,7 @@
 
     (call $centreOnPlayer)
     (call $updateFov)
+    (global.set $gameMode (global.get $gmDungeon))
   )
 
   (func $placeEntities (param $rid i32)
@@ -662,7 +667,13 @@
   )
 
   (func $input (export "input") (param $ch i32) (result i32)
-    (call $convertToAction (local.get $ch))
+    ;; default to no action
+    [[store $currentAction Action.id $actNone]]
+    [[store $currentAction Action.eid $playerID]]
+
+    ;; TODO could this be a table?
+    (if (i32.eq (global.get $gameMode) (global.get $gmDungeon)) (call $gmDungeonInput (local.get $ch)))
+    (if (i32.eq (global.get $gameMode) (global.get $gmDead)) (call $gmDeadInput (local.get $ch)))
     (call $applyAction)
 
     [[load $currentAction Action.id]]
@@ -771,11 +782,7 @@
     (call $render)
   )
 
-  (func $convertToAction (param $ch i32)
-    ;; default to no action
-    [[store $currentAction Action.id $actNone]]
-    [[store $currentAction Action.eid $playerID]]
-
+  (func $gmDungeonInput (param $ch i32)
     ;; TODO convert to use tables?
     (if (i32.or (i32.or
       (i32.eq (local.get $ch) (global.get $kUp))
@@ -831,6 +838,16 @@
     ))
 
     (if (i32.eq (local.get $ch) (global.get $kGenerate)) (then
+      [[store $currentAction Action.id $actGenerate]]
+      (return)
+    ))
+  )
+
+  (func $gmDeadInput (param $ch i32)
+    (if (i32.or
+      (i32.eq (local.get $ch) (global.get $kEscape))
+      (i32.eq (local.get $ch) (global.get $kGenerate))
+    ) (then
       [[store $currentAction Action.id $actGenerate]]
       (return)
     ))
@@ -1339,6 +1356,7 @@
 
     (if (call $isPlayer (local.get $eid)) (then
       (local.set $s [[s "You died!"]])
+      (global.set $gameMode (global.get $gmDead))
     ) (else
       (local.set $s (global.get $tempString))
       (local.set $s (call $strcpy (local.get $s) (call $getName (local.get $eid))))
