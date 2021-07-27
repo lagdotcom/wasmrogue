@@ -138,6 +138,7 @@ class Preprocessor {
       "=": this.evaluate.bind(this),
       "=64": this.evaluate64.bind(this),
       align: this.align.bind(this),
+      attach: this.attach.bind(this),
       component: this.component.bind(this),
       consts: this.consts.bind(this),
       data: this.data.bind(this),
@@ -182,9 +183,14 @@ class Preprocessor {
 
   private evalNumber(code: string) {
     const value = this.eval(code);
-    // evaluate single chars as their key code
-    if (typeof value === "string" && value.length === 1)
-      return value.charCodeAt(0);
+
+    if (typeof value === "string") {
+      // evaluate single chars as their key code
+      if (value.length === 1) return value.charCodeAt(0);
+
+      // add to string data
+      return this.addString(value);
+    }
 
     if (typeof value !== "number" || isNaN(value))
       throw this.error(`isNaN: ${code} = ${value}`);
@@ -598,17 +604,42 @@ class Preprocessor {
     const result = this.eval(src);
     if (typeof result !== "string") throw this.error(`Not a string: ${src}`);
 
-    if (!(result in this.stringOffsets)) {
+    return `(i32.const ${this.addString(result)})`;
+  }
+
+  private addString(value: string) {
+    if (!(value in this.stringOffsets)) {
       const offset = this.env.Strings + this.stringData.length;
-      this.stringData += result + "\0";
-      this.stringOffsets[result] = offset;
+      this.stringData += value + "\0";
+      this.stringOffsets[value] = offset;
     }
 
-    return `(i32.const ${this.stringOffsets[result]})`;
+    return this.stringOffsets[value];
   }
 
   strings() {
     return `"${this.stringData.replaceAll("\0", "\\00")}"`;
+  }
+
+  attach(offset: string, name: string, ...fields: string[]) {
+    const s = this.structures[name];
+    if (!s) throw this.error(`Unknown structure: ${name}`);
+
+    const fieldNames = Object.keys(s.fields);
+    const data: Record<string, string> = Object.fromEntries(
+      fieldNames.map((name) => [name, "(i32.const 0)"])
+    );
+    fields.forEach((fstring) => {
+      const [fname, fvalue] = fstring.split("=");
+      const f = s.fields[fname];
+      if (!f) throw this.error(`Unknown structure field: ${name}.${fname}`);
+
+      const value = this.evaluate(fvalue);
+      data[fname] = value;
+    });
+
+    const fdata = fieldNames.map((fn) => data[fn]).join(" ");
+    return `(call $attach${name} ${this.evaluate(offset)} ${fdata})`;
   }
 }
 

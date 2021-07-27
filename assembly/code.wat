@@ -2,6 +2,7 @@
   (import "stdlib" "abs" (func $abs (param i32) (result i32)))
   (import "stdlib" "max" (func $max (param i32) (param i32) (result i32)))
 
+  (import "host" "debug" (func $debug (param i32)))
   ;; TODO make my own rng!
   (import "host" "rng" (func $rng (param i32) (param i32) (result i32)))
 
@@ -30,6 +31,7 @@
 
   (global $kGenerate i32 [[= 'G']])
 
+  ;; TODO remove me
   (global $playerID (export "gPlayerID") (mut i32) (i32.const 0))
   (global $visionRange i32 (i32.const 8))
 
@@ -50,10 +52,13 @@
   (global $nextEntity (mut i32) (i32.const 1))
   (global $currentEntity (mut i32) (i32.const -1))
 
-  [[component Appearance ch:u8 colour:i32 name:i32]]
+  [[consts layer 0 Corpse Item Actor]]
+
+  [[component Appearance ch:u8 layer:u8 colour:i32 name:i32]]
   [[component AI fn:u8]]
   [[component Fighter maxhp:i32 hp:i32 defence:i32 power:i32]]
   [[component Position x:u8 y:u8]]
+  [[component Player]]
   [[component Solid]]
 
   [[struct Room x1:u8 y1:u8 x2:u8 y2:u8]]
@@ -95,6 +100,9 @@
   ;; TODO make sizeof_Strings dynamic
   [[reserve Strings 1000 gStrings]]
   (global $stringsSize (export "gStringsSize") i32 [[= sizeof_Strings]])
+  [[reserve tempString 100]]
+  [[reserve itoaString 20]]
+  (global $itoaStringEnd i32 [[= itoaString + sizeof_itoaString - 1]])
 
   [[memory memory]]
 
@@ -118,6 +126,46 @@
         (i32.const 0))
       )
     )
+  )
+  (func $strcpy (param $dst i32) (param $src i32) (result i32)
+    (local $ch i32)
+    (loop $cat
+      (i32.store8 (local.get $dst) (local.tee $ch (i32.load8_u (local.get $src))))
+
+      (local.set $dst (i32.add (local.get $dst) (i32.const 1)))
+      (local.set $src (i32.add (local.get $src) (i32.const 1)))
+
+      (br_if $cat (i32.ne (local.get $ch) (i32.const 0)))
+    )
+
+    ;; return address of closing NUL byte
+    (i32.sub (local.get $dst) (i32.const 1))
+  )
+  (func $itoa (param $n i32) (result i32)
+    (local $s i32)
+    (local $mod i32)
+    (local $digit i32)
+
+    (if (i32.eqz (local.get $n)) (return [[s "0"]]))
+
+    (i32.store8 (local.tee $s (global.get $itoaStringEnd)) (i32.const 0))
+    (i32.store8 (i32.sub (local.get $s) (i32.const 1)) [[= '0']])
+
+    (local.set $mod (i32.const 10))
+    (loop $digits
+      (local.set $digit (i32.rem_u (local.get $n) (local.get $mod)))
+
+      ;; *s-- = digit + '0'
+      (i32.store8 (local.tee $s (i32.sub (local.get $s) (i32.const 1))) (i32.add (local.get $digit) [[= '0']]))
+
+      ;; remove from total
+      (local.set $n (i32.sub (local.get $n) (local.get $digit)))
+
+      (local.set $mod (i32.mul (local.get $mod) (i32.const 10)))
+      (br_if $digits (i32.gt_u (local.get $n) (i32.const 0)))
+    )
+
+    (local.get $s)
   )
 
   (func $initialise (export "initialise") (param $w i32) (param $h i32)
@@ -180,10 +228,7 @@
     (local.set $i (i32.const 0))
     (loop $rooms
       (if (call $doRoomsIntersect (local.get $id) (local.get $i))
-        (then
-          (i32.const 1)
-          (return)
-        )
+        (return (i32.const 1))
       )
 
       (br_if $rooms (i32.lt_u
@@ -652,15 +697,58 @@
   )
 
   (func $applyMeleeAction
+    (local $me i32)
     (local $pos i32)
     (local $enemy i32)
-    (local.set $pos (call $getPosition [[load $currentAction Action.eid]]))
+    (local $attacker i32)
+    (local $victim i32)
+    (local $damage i32)
+    (local $s i32)
+
+    (local.set $me [[load $currentAction Action.eid]])
+    (local.set $pos (call $getPosition (local.get $me)))
     (local.set $enemy (call $getBlockerAt
       (i32.add [[load $pos Position.x]] [[load $currentAction Action.dx]])
       (i32.add [[load $pos Position.y]] [[load $currentAction Action.dy]])
     ))
 
-    ;; TODO applyMeleeAction
+    (if (i32.lt_s (local.get $enemy) (i32.const 0)) (then
+      ;; TODO tried to attack nothing?
+      (return)
+    ))
+
+
+    (if (i32.eqz (call $hasFighter (local.get $me))) (then
+      ;; TODO not a combatant
+      (return)
+    ))
+
+    (if (i32.eqz (call $hasFighter (local.get $enemy))) (then
+      ;; TODO not a combatant
+      (return)
+    ))
+
+    (local.set $attacker (call $getFighter (local.get $me)))
+    (local.set $victim (call $getFighter (local.get $enemy)))
+    (local.set $damage (i32.sub [[load $attacker Fighter.power]] [[load $victim Fighter.defence]]))
+
+    (local.set $s (global.get $tempString))
+    (local.set $s (call $strcpy (local.get $s) (call $getName (local.get $me))))
+    (local.set $s (call $strcpy (local.get $s) [[s " attacks "]]))
+    (local.set $s (call $strcpy (local.get $s) (call $getName (local.get $enemy))))
+
+    (if (i32.gt_s (local.get $damage) (i32.const 0)) (then
+      (local.set $s (call $strcpy (local.get $s) [[s " for "]]))
+      (local.set $s (call $strcpy (local.get $s) (call $itoa (local.get $damage))))
+      (local.set $s (call $strcpy (local.get $s) [[s " hit points."]]))
+      [[store $victim Fighter.hp (i32.sub [[load $victim Fighter.hp]] (local.get $damage))]]
+      (call $addToLog (global.get $tempString))
+
+      (call $checkKill (local.get $enemy))
+    ) (else
+      (local.set $s (call $strcpy (local.get $s) [[s " but does no damage."]]))
+      (call $addToLog (global.get $tempString))
+    ))
   )
 
   (func $applyAction
@@ -753,10 +841,8 @@
       (if (i32.and
         (i32.eq (local.get $x) [[load $pos Position.x]])
         (i32.eq (local.get $y) [[load $pos Position.y]])
-      ) (then
-        (local.get $eid)
-        (return)
-      ))
+      ) (return (local.get $eid))
+      )
 
       (local.set $pos (i32.add (local.get $pos) [[= sizeof_Position]]))
       (br_if $entities (i32.le_u
@@ -781,10 +867,8 @@
           (i32.eq (local.get $y) [[load $pos Position.y]])
         )
         (call $isSolid (local.get $eid))
-      ) (then
-        (local.get $eid)
-        (return)
-      ))
+      ) (return (local.get $eid))
+      )
 
       (local.set $pos (i32.add (local.get $pos) [[= sizeof_Position]]))
       (br_if $entities (i32.le_u
@@ -809,7 +893,7 @@
 
     (local.set $eid (call $spawnEntity))
     (call $setSolid (local.get $eid))
-    (call $attachPosition (local.get $eid) (local.get $x) (local.get $y))
+    [[attach $eid Position x=$x y=$y]]
 
     (if (i32.le_u (local.get $roll) (i32.const 80)) (then
       (call $constructOrc (local.get $eid))
@@ -820,30 +904,22 @@
   )
 
   (func $constructOrc (param $eid i32)
-    (call $attachAppearance (local.get $eid) [[= 'o']] [[= 0x3f7f3f00 ]] [[s "Orc"]])
-    (call $attachAI (local.get $eid) (global.get $aiHostile))
-    (call $attachFighter (local.get $eid)
-      (i32.const 10) (i32.const 10) (i32.const 0) (i32.const 3)
-    )
+    [[attach $eid Appearance ch='o' colour=0x3f7f3f00 layer=layerActor name="Orc"]]
+    [[attach $eid AI fn=$aiHostile]]
+    [[attach $eid Fighter maxhp=10 hp=10 defence=0 power=3]]
   )
   (func $constructTroll (param $eid i32)
-    (call $attachAppearance (local.get $eid) [[= 'T']] [[= 0x007f0000 ]] [[s "Troll"]])
-    (call $attachAI (local.get $eid) (global.get $aiHostile))
-    (call $attachFighter (local.get $eid)
-      (i32.const 16) (i32.const 16) (i32.const 1) (i32.const 4)
-    )
+    [[attach $eid Appearance ch='T' colour=0x007f0000 layer=layerActor name="Troll"]]
+    [[attach $eid AI fn=$aiHostile]]
+    [[attach $eid Fighter maxhp=16 hp=16 defence=1 power=4]]
   )
 
   (func $makePlayer (param $x i32) (param $y i32)
+    (call $setPlayer (global.get $playerID))
     (call $setSolid (global.get $playerID))
-    (call $attachAppearance (global.get $playerID)
-      (global.get $chAt) (global.get $cWhite) [[s "you"]]
-    )
-    (call $attachFighter (global.get $playerID)
-      (i32.const 32) (i32.const 32) (i32.const 2) (i32.const 5)
-    )
-    (call $attachPosition (global.get $playerID)
-      (local.get $x) (local.get $y))
+    [[attach $playerID Appearance ch='@' colour=0xffffff00 layer=layerActor name="Player"]]
+    [[attach $playerID Fighter maxhp=32 hp=32 defence=2 power=5]]
+    [[attach $playerID Position x=$x y=$y]]
   )
 
   (func $drawFg (param $x i32) (param $y i32) (param $ch i32) (param $fg i32)
@@ -1199,7 +1275,8 @@
 
     (local.set $dx (i32.sub [[load $tpos Position.x]] [[load $pos Position.x]]))
     (local.set $dy (i32.sub [[load $tpos Position.y]] [[load $pos Position.y]]))
-    (local.set $distance (call $max (call $abs (local.get $dx)) (call $abs (local.get $dy))))
+    ;; Manhattan distance
+    (local.set $distance (i32.add (call $abs (local.get $dx)) (call $abs (local.get $dy))))
 
     [[store $currentAction Action.eid $currentEntity]]
 
@@ -1217,6 +1294,41 @@
 
     [[store $currentAction Action.id $actWait]]
     (call $applyWaitAction)
+  )
+
+  (func $getName (param $eid i32) (result i32)
+    (if (call $hasAppearance (local.get $eid)) (then
+      [[load (call $getAppearance (local.get $eid)) Appearance.name]]
+      (return)
+    ))
+    [[s "something"]]
+  )
+
+  (func $addToLog (param $s i32)
+    ;; TODO addToLog
+    (call $debug (local.get $s))
+  )
+
+  (func $checkKill (param $eid i32)
+    (local $fighter i32)
+    (local $s i32)
+
+    (local.set $fighter (call $getFighter (local.get $eid)))
+    (if (i32.gt_s [[load $fighter Fighter.hp]] (i32.const 0)) (return))
+
+    (if (call $isPlayer (local.get $eid)) (then
+      (local.set $s [[s "You died!"]])
+    ) (else
+      (local.set $s (global.get $tempString))
+      (local.set $s (call $strcpy (local.get $s) (call $getName (local.get $eid))))
+      (call $strcpy (local.get $s) [[s " is dead!"]]) (drop)
+      (local.set $s (global.get $tempString))
+    ))
+    (call $addToLog (local.get $s))
+
+    [[attach $eid Appearance ch='%' colour=0xbf000000 layer=layerCorpse name="corpse"]]
+    (call $unsetSolid (local.get $eid))
+    (call $detachAI (local.get $eid))
   )
 
   (data $stringData (offset [[= Strings]])

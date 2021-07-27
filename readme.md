@@ -32,6 +32,7 @@ Preprocessor commands:
 - `[[load pointer struct.field]]` reads a structure field using `pointer` as the start of the structure.
 - `[[store pointer struct.field value]]` writes a structure field using `pointer` as the start of the structure.
 - `[[component name field:type...]]` is like `[[struct]]` but it also defines a mask constant and functions to check presence, get, attach and detach components from entities.
+- `[[attach entity struct field=value...]]` attaches a component to a given entity (saves you having to remember the field order).
 - `[[system Name component...]]` generates two functions:
 
   - `sysName()` which runs the system on all matching entities
@@ -69,24 +70,29 @@ My memory layout is dynamic because my preprocessor handles it. Here's what is i
 | 0      | 19\*2       | Tile types      |
 | 40     | 1..3        | Current action  |
 | 48     | 256\*8      | Entity data     |
-| 2096   | 256\*9      | Appearance data |
-| 4400   | 256\*1      | AI data         |
-| 4656   | 256\*16     | Fighter data    |
-| 8752   | 256\*2      | Position data   |
-| 9264   | 32\*4       | Room data       |
-| 9392   | 100\*100    | TileMap         |
-| 19392  | 100\*100    | VisibleMap      |
-| 29392  | 100\*100    | KnownMap        |
-| 39392  | 100\*100    | PathMap         |
-| 49392  | 100\*100    | Display (chars) |
-| 59592  | 100\*100\*4 | Display (fg)    |
-| 99392  | 100\*100\*4 | Display (bg)    |
-| 139392 | 1000        | Strings         |
-| 140392 | -           | -               |
+| 2096   | 256\*10     | Appearance data |
+| 4656   | 256\*1      | AI data         |
+| 4912   | 256\*16     | Fighter data    |
+| 9008   | 256\*2      | Position data   |
+| 9520   | 32\*4       | Room data       |
+| 9648   | 100\*100    | TileMap         |
+| 19648  | 100\*100    | VisibleMap      |
+| 29648  | 100\*100    | KnownMap        |
+| 39648  | 100\*100    | PathMap         |
+| 49648  | 100\*100    | Display (chars) |
+| 59648  | 100\*100\*4 | Display (fg)    |
+| 99648  | 100\*100\*4 | Display (bg)    |
+| 139648 | 1000        | Strings         |
+| 140648 | 100         | temp string     |
+| 140748 | 20          | temp (itoa)     |
 
 So, my data currently fits in three WebAssembly memory pages (64kB each).
 
 ## Log
+
+### 2021-07-27
+
+Still plugging away at part 6. Lots to do!
 
 ### 2021-07-26
 

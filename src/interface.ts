@@ -51,6 +51,7 @@ interface ModuleInterface {
 
 export interface RAppearance {
   ch: number;
+  layer: number;
   fg: number;
   name: string;
 }
@@ -98,7 +99,7 @@ export class WasmInterface {
   entities: DataView;
   maxEntities: number;
   map: DataView;
-  strings: DataView;
+  raw: DataView;
   tileTypes: RTileType[];
 
   constructor(private i: ModuleInterface) {
@@ -110,7 +111,7 @@ export class WasmInterface {
     this.entities = new DataView(empty);
     this.maxEntities = 0;
     this.map = new DataView(empty);
-    this.strings = new DataView(empty);
+    this.raw = new DataView(empty);
     this.tileTypes = [];
   }
 
@@ -138,10 +139,10 @@ export class WasmInterface {
     return new DataView(this.i.memory.buffer, start, length);
   }
 
-  private string(offset: number) {
+  string(offset: number) {
     const bytes: number[] = [];
-    for (offset -= this.i.gStrings.value; ; offset++) {
-      const ch = this.strings.getUint8(offset);
+    for (; ; offset++) {
+      const ch = this.raw.getUint8(offset);
 
       if (ch === 0) return String.fromCharCode(...bytes);
       bytes.push(ch);
@@ -166,14 +167,15 @@ export class WasmInterface {
   }
 
   appearance(id: number): RAppearance {
-    const size = 9;
+    const size = 10;
     const offset = id * size + this.i.gAppearances.value;
     const mem = this.slice(offset, size);
 
     return {
       ch: mem.getUint8(0),
-      fg: mem.getUint32(1, true),
-      name: this.string(mem.getUint32(5, true)),
+      layer: mem.getUint8(1),
+      fg: mem.getUint32(2, true),
+      name: this.string(mem.getUint32(6, true)),
     };
   }
 
@@ -194,7 +196,7 @@ export class WasmInterface {
 
     return {
       maxHp: mem.getUint32(0, true),
-      hp: mem.getUint32(4, true),
+      hp: mem.getInt32(4, true),
       defence: mem.getUint32(8, true),
       power: mem.getUint32(12, true),
     };
@@ -238,7 +240,7 @@ export class WasmInterface {
     this.display = this.slice(this.i.gDisplay.value, this.displaySize);
     this.displayFg = this.slice(this.i.gDisplayFG.value, this.displaySize * 4);
     this.displayBg = this.slice(this.i.gDisplayBG.value, this.displaySize * 4);
-    this.strings = this.slice(this.i.gStrings.value, this.i.gStringsSize.value);
+    this.raw = new DataView(this.i.memory.buffer);
     this.tileTypes = range(this.i.gTileTypeCount.value).map((id) =>
       this.tt(id)
     );
@@ -265,9 +267,18 @@ const getWASM = (url: string, imports?: WebAssembly.Imports) =>
   });
 
 async function getInterface() {
+  let iface: WasmInterface | undefined = undefined;
+  const debug = (offset: number) => {
+    if (!iface) return;
+
+    const message = iface.string(offset);
+    console.log(message);
+  };
+
   const stdlib = await getWASM(stdlibUrl);
-  const main = await getWASM(mainUrl, { stdlib, host: { rng } });
-  return new WasmInterface(main as unknown as ModuleInterface);
+  const main = await getWASM(mainUrl, { stdlib, host: { debug, rng } });
+  iface = new WasmInterface(main as unknown as ModuleInterface);
+  return iface;
 }
 
 export default getInterface;
