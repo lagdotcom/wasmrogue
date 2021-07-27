@@ -1,4 +1,8 @@
 (module
+  (import "stdlib" "abs" (func $abs (param i32) (result i32)))
+  (import "stdlib" "max" (func $max (param i32) (param i32) (result i32)))
+
+  (import "host" "debug" (func $debug (param i32)))
   ;; TODO make my own rng!
   (import "host" "rng" (func $rng (param i32) (param i32) (result i32)))
 
@@ -11,8 +15,27 @@
   (global $kUp i32 (i32.const 38))
   (global $kRight i32 (i32.const 39))
   (global $kDown i32 (i32.const 40))
+  (global $kWait i32 (i32.const 12))
+
+  (global $kNumLeft i32 (i32.const 100))
+  (global $kNumUp i32 (i32.const 104))
+  (global $kNumRight i32 (i32.const 102))
+  (global $kNumDown i32 (i32.const 98))
+  (global $kNumWait i32 (i32.const 101))
+
+  (global $kViLeft i32 (i32.const 72))
+  (global $kViUp i32 (i32.const 75))
+  (global $kViRight i32 (i32.const 76))
+  (global $kViDown i32 (i32.const 74))
+  (global $kViWait i32 (i32.const 190))
+
+  (global $kEscape i32 (i32.const 27))
   (global $kGenerate i32 [[= 'G']])
 
+  [[consts gm 0 Dungeon Dead]]
+  (global $gameMode (export "gGameMode") (mut i32) [[= gmDungeon]])
+
+  ;; TODO remove me
   (global $playerID (export "gPlayerID") (mut i32) (i32.const 0))
   (global $visionRange i32 (i32.const 8))
 
@@ -31,9 +54,15 @@
   (global $maxEntities (export "gMaxEntities") i32 (i32.const 256))
   (global $entitySize (export "gEntitySize") i32 [[= sizeof_Entity]])
   (global $nextEntity (mut i32) (i32.const 1))
+  (global $currentEntity (mut i32) (i32.const -1))
 
-  [[component Appearance ch:u8 colour:i32]]
+  [[consts layer 0 Empty Corpse Item Actor]]
+
+  [[component Appearance ch:u8 layer:u8 colour:i32 name:i32]]
+  [[component AI fn:u8]]
+  [[component Fighter maxhp:i32 hp:i32 defence:i32 power:i32]]
   [[component Position x:u8 y:u8]]
+  [[component Player]]
   [[component Solid]]
 
   [[struct Room x1:u8 y1:u8 x2:u8 y2:u8]]
@@ -42,14 +71,15 @@
   (global $maxRooms i32 (i32.const 32))
   (global $maxMonstersPerRoom i32 (i32.const 2))
 
-  [[struct NoneAction id:u8]]
-  [[struct MoveAction id:u8 dx:s8 dy:s8]]
-  [[struct GenerateAction id:u8]]
+  [[struct Action id:u8 dx:s8 dy:s8 eid:u8]]
+  [[consts dir 0 Up Right Down Left]]
 
-  [[reserve Action Math.max(sizeof_NoneAction,sizeof_MoveAction,sizeof_GenerateAction)]]
+  [[reserve currentAction sizeof_Action]]
   [[align 8]]
   [[reserve Entities maxEntities*sizeof_Entity gEntities]]
   [[reserve Appearances maxEntities*sizeof_Appearance gAppearances]]
+  [[reserve AIs maxEntities*sizeof_AI gAIs]]
+  [[reserve Fighters maxEntities*sizeof_Fighter gFighters]]
   [[reserve Positions maxEntities*sizeof_Position gPositions]]
   [[reserve Rooms maxRooms*sizeof_Room gRooms]]
 
@@ -59,6 +89,7 @@
   [[reserve Map mapSize gMap]]
   [[reserve VisibleMap mapSize]]
   [[reserve ExploredMap mapSize]]
+  [[reserve PathMap mapSize]]
 
   (global $displayWidth (export "gDisplayWidth") (mut i32) (i32.const 0))
   (global $displayHeight (export "gDisplayHeight") (mut i32) (i32.const 0))
@@ -70,8 +101,74 @@
   [[reserve Display 100*100 gDisplay]]
   [[reserve DisplayFG 100*100*4 gDisplayFG]]
   [[reserve DisplayBG 100*100*4 gDisplayBG]]
+  ;; TODO remove the need for this???
+  [[reserve DisplayLayer 100*100]]
 
-  [[memory memory]]
+  ;; TODO make sizeof_Strings dynamic
+  [[reserve Strings 1000 gStrings]]
+  (global $stringsSize (export "gStringsSize") i32 [[= sizeof_Strings]])
+  [[reserve tempString 100]]
+  [[reserve itoaString 20]]
+  (global $itoaStringEnd i32 [[= itoaString + sizeof_itoaString - 1]])
+
+  ;; TODO would prefer to put these in stdlib, but then they don't reference the same memory...
+  (func $memset (param $addr i32) (param $ch i32) (param $size i32)
+    (loop $set
+      (i32.store8 (local.get $addr) (local.get $ch))
+      (local.set $addr (i32.add (local.get $addr) (i32.const 1)))
+      (br_if $set (i32.gt_u
+        (local.tee $size (i32.sub (local.get $size) (i32.const 1)))
+        (i32.const 0))
+      )
+    )
+  )
+  (func $memset64 (param $addr i32) (param $n i64) (param $size i32)
+    (loop $set
+      (i64.store (local.get $addr) (local.get $n))
+      (local.set $addr (i32.add (local.get $addr) (i32.const 8)))
+      (br_if $set (i32.gt_u
+        (local.tee $size (i32.sub (local.get $size) (i32.const 8)))
+        (i32.const 0))
+      )
+    )
+  )
+  (func $strcpy (param $dst i32) (param $src i32) (result i32)
+    (local $ch i32)
+    (loop $cat
+      (i32.store8 (local.get $dst) (local.tee $ch (i32.load8_u (local.get $src))))
+
+      (local.set $dst (i32.add (local.get $dst) (i32.const 1)))
+      (local.set $src (i32.add (local.get $src) (i32.const 1)))
+
+      (br_if $cat (i32.ne (local.get $ch) (i32.const 0)))
+    )
+
+    ;; return address of closing NUL byte
+    (i32.sub (local.get $dst) (i32.const 1))
+  )
+  (func $itoa (param $n i32) (result i32)
+    (local $s i32)
+    (local $mod i32)
+    (local $digit i32)
+
+    (if (i32.eqz (local.get $n)) (return [[s "0"]]))
+
+    (i32.store8 (local.tee $s (global.get $itoaStringEnd)) (i32.const 0))
+    (i32.store8 (i32.sub (local.get $s) (i32.const 1)) [[= '0']])
+
+    (local.set $mod (i32.const 1))
+    (loop $digits
+      (local.set $digit (i32.rem_u (i32.div_u (local.get $n) (local.get $mod)) (i32.const 10)))
+
+      ;; *s-- = digit + '0'
+      (i32.store8 (local.tee $s (i32.sub (local.get $s) (i32.const 1))) (i32.add (local.get $digit) [[= '0']]))
+
+      (local.set $mod (i32.mul (local.get $mod) (i32.const 10)))
+      (br_if $digits (i32.ge_u (local.get $n) (local.get $mod)))
+    )
+
+    (local.get $s)
+  )
 
   (func $initialise (export "initialise") (param $w i32) (param $h i32)
     ;; TODO check $w * $h < sizeof_Display
@@ -83,64 +180,19 @@
   )
 
   (func $fillMap (param $tid i32)
-    (local $i i32)
-    (local $end i32)
-    (local.set $i (global.get $Map))
-    (local.set $end (i32.add (global.get $Map) (global.get $mapSize)))
-
-    (loop $fill
-      (i32.store8 (local.get $i) (local.get $tid))
-      (br_if $fill (i32.ne
-        (local.tee $i (i32.add (local.get $i) (i32.const 1)))
-        (local.get $end)
-      ))
-    )
+    (call $memset (global.get $Map) (local.get $tid) (global.get $mapSize))
   )
 
   (func $clearVisibleMap
-    (local $i i32)
-    (local $end i32)
-    (local.set $i (global.get $VisibleMap))
-    (local.set $end (i32.add (global.get $VisibleMap) (global.get $mapSize)))
-
-    (loop $fill
-      (i32.store8 (local.get $i) (i32.const 0))
-      (br_if $fill (i32.ne
-        (local.tee $i (i32.add (local.get $i) (i32.const 1)))
-        (local.get $end)
-      ))
-    )
+    (call $memset (global.get $VisibleMap) (i32.const 0) (global.get $mapSize))
   )
 
   (func $clearExploredMap
-    (local $i i32)
-    (local $end i32)
-    (local.set $i (global.get $ExploredMap))
-    (local.set $end (i32.add (global.get $ExploredMap) (global.get $mapSize)))
-
-    (loop $fill
-      (i32.store8 (local.get $i) (i32.const 0))
-      (br_if $fill (i32.ne
-        (local.tee $i (i32.add (local.get $i) (i32.const 1)))
-        (local.get $end)
-      ))
-    )
+    (call $memset (global.get $ExploredMap) (i32.const 0) (global.get $mapSize))
   )
 
   (func $clearEntities
-    (local $i i32)
-    (local $end i32)
-    (local.set $i (global.get $Entities))
-    (local.set $end (i32.add (global.get $Entities) [[= sizeof_Entities]]))
-
-    (loop $fill
-      (i64.store (local.get $i) (i64.const 0))
-      (br_if $fill (i32.ne
-        (local.tee $i (i32.add (local.get $i) (i32.const 8)))
-        (local.get $end)
-      ))
-    )
-
+    (call $memset64 (global.get $Entities) (i64.const 0) [[= sizeof_Entities]])
     (global.set $nextEntity (i32.const 1))
   )
 
@@ -178,10 +230,7 @@
     (local.set $i (i32.const 0))
     (loop $rooms
       (if (call $doRoomsIntersect (local.get $id) (local.get $i))
-        (then
-          (i32.const 1)
-          (return)
-        )
+        (return (i32.const 1))
       )
 
       (br_if $rooms (i32.lt_u
@@ -213,16 +262,6 @@
         (local.get $ey))
       )
     )
-  )
-
-  (func $abs (param $n i32) (result i32)
-    (if (i32.lt_s (local.get $n) (i32.const 0))
-      (then
-        (i32.sub (i32.const 0) (local.get $n))
-        (return)
-      )
-    )
-    (local.get $n)
   )
 
   (func $carveLine (param $x0 i32) (param $y0 i32) (param $x1 i32) (param $y1 i32)
@@ -371,7 +410,8 @@
       (if (i32.eqz (local.get $n)) (then
         (call $carveRoom (i32.const 0))
 
-        (call $makePlayer
+        (call $constructPlayer
+          (global.get $playerID)
           (call $getRoomCX (i32.const 0))
           (call $getRoomCY (i32.const 0))
         )
@@ -399,6 +439,7 @@
 
     (call $centreOnPlayer)
     (call $updateFov)
+    (global.set $gameMode (global.get $gmDungeon))
   )
 
   (func $placeEntities (param $rid i32)
@@ -518,6 +559,18 @@
       )
     )
   )
+  (func $getDisplayLayerXY (param $x i32) (param $y i32) (result i32)
+    (i32.add
+      (global.get $DisplayLayer)
+      (i32.add
+        (i32.mul
+          (global.get $displayWidth)
+          (local.get $y)
+        )
+        (local.get $x)
+      )
+    )
+  )
 
   (func $getMapXY (param $x i32) (param $y i32) (result i32)
     (i32.add
@@ -548,6 +601,19 @@
   (func $getExploredMapXY (param $x i32) (param $y i32) (result i32)
     (i32.add
       (global.get $ExploredMap)
+      (i32.add
+        (i32.mul
+          (global.get $mapWidth)
+          (local.get $y)
+        )
+        (local.get $x)
+      )
+    )
+  )
+
+  (func $getPathMapXY (param $x i32) (param $y i32) (result i32)
+    (i32.add
+      (global.get $PathMap)
       (i32.add
         (i32.mul
           (global.get $mapWidth)
@@ -608,77 +674,194 @@
     ) (then
         [[store $pos Position.x $x]]
         [[store $pos Position.y $y]]
-
-        ;; TODO only player
-        (call $updateFov)
       )
     )
   )
 
   (func $input (export "input") (param $ch i32) (result i32)
-    (call $convertToAction (local.get $ch))
+    ;; default to no action
+    [[store $currentAction Action.id $actNone]]
+    [[store $currentAction Action.eid $playerID]]
+
+    ;; TODO could this be a table?
+    (if (i32.eq (global.get $gameMode) (global.get $gmDungeon)) (call $gmDungeonInput (local.get $ch)))
+    (if (i32.eq (global.get $gameMode) (global.get $gmDead)) (call $gmDeadInput (local.get $ch)))
     (call $applyAction)
 
-    [[load $Action NoneAction.id]]
+    [[load $currentAction Action.id]]
   )
 
-  (table $actions anyfunc (elem
+  (table $fnLookup anyfunc (elem
     $applyNoAction
+    $applyWaitAction
     $applyMoveAction
+    $applyBumpAction
+    $applyMeleeAction
     $generateMap
+
+    $applyNoneAI
+    $applyHostileAI
   ))
-  [[consts act 0 None Move Generate]]
+  [[consts act 0 None Wait Move Bump Melee Generate]]
+  [[consts ai actGenerate+1 None Hostile]]
 
   (func $applyNoAction)
+  (func $applyWaitAction)
 
   (func $applyMoveAction
     (call $moveEntity
-      ;; TODO allow actions on arbitrary entities!
-      (global.get $playerID)
-      [[load $Action MoveAction.dx]]
-      [[load $Action MoveAction.dy]]
+      [[load $currentAction Action.eid]]
+      [[load $currentAction Action.dx]]
+      [[load $currentAction Action.dy]]
     )
 
-    (if (call $playerNearEdge) (call $centreOnPlayer))
+    (if (call $isPlayer [[load $currentAction Action.eid]]) (then
+      (if (call $playerNearEdge) (call $centreOnPlayer))
+    ))
+  )
+
+  (func $applyBumpAction
+    (local $pos i32)
+    (local.set $pos (call $getPosition [[load $currentAction Action.eid]]))
+
+    (if (i32.lt_s (call $getBlockerAt
+      (i32.add [[load $pos Position.x]] [[load $currentAction Action.dx]])
+      (i32.add [[load $pos Position.y]] [[load $currentAction Action.dy]])
+    ) (i32.const 0))
+      (call $applyMoveAction)
+      (call $applyMeleeAction)
+    )
+  )
+
+  (func $applyMeleeAction
+    (local $me i32)
+    (local $pos i32)
+    (local $enemy i32)
+    (local $attacker i32)
+    (local $victim i32)
+    (local $damage i32)
+    (local $s i32)
+
+    (local.set $me [[load $currentAction Action.eid]])
+    (local.set $pos (call $getPosition (local.get $me)))
+    (local.set $enemy (call $getBlockerAt
+      (i32.add [[load $pos Position.x]] [[load $currentAction Action.dx]])
+      (i32.add [[load $pos Position.y]] [[load $currentAction Action.dy]])
+    ))
+
+    (if (i32.lt_s (local.get $enemy) (i32.const 0)) (then
+      ;; TODO tried to attack nothing?
+      (return)
+    ))
+
+    (if (i32.eqz (call $hasFighter (local.get $me))) (then
+      ;; TODO not a combatant
+      (return)
+    ))
+
+    (if (i32.eqz (call $hasFighter (local.get $enemy))) (then
+      ;; TODO not a combatant
+      (return)
+    ))
+
+    (local.set $attacker (call $getFighter (local.get $me)))
+    (local.set $victim (call $getFighter (local.get $enemy)))
+    (local.set $damage (i32.sub [[load $attacker Fighter.power]] [[load $victim Fighter.defence]]))
+
+    (local.set $s (global.get $tempString))
+    (local.set $s (call $strcpy (local.get $s) (call $getName (local.get $me))))
+    (local.set $s (call $strcpy (local.get $s) [[s " attacks "]]))
+    (local.set $s (call $strcpy (local.get $s) (call $getName (local.get $enemy))))
+
+    (if (i32.gt_s (local.get $damage) (i32.const 0)) (then
+      (local.set $s (call $strcpy (local.get $s) [[s " for "]]))
+      (local.set $s (call $strcpy (local.get $s) (call $itoa (local.get $damage))))
+      (local.set $s (call $strcpy (local.get $s) [[s " hit points."]]))
+      [[store $victim Fighter.hp (i32.sub [[load $victim Fighter.hp]] (local.get $damage))]]
+      (call $addToLog (global.get $tempString))
+
+      (call $checkKill (local.get $enemy))
+    ) (else
+      (local.set $s (call $strcpy (local.get $s) [[s " but does no damage."]]))
+      (call $addToLog (global.get $tempString))
+    ))
   )
 
   (func $applyAction
-    (call_indirect $actions [[load $Action NoneAction.id]])
+    (call_indirect $fnLookup [[load $currentAction Action.id]])
+
+    (call $sysRunAI)
+    (call $updateFov)
     (call $render)
   )
 
-  (func $convertToAction (param $ch i32)
-    ;; default to no action
-    [[store $Action NoneAction.id $actNone]]
-
+  (func $gmDungeonInput (param $ch i32)
     ;; TODO convert to use tables?
-    (if (i32.eq (local.get $ch) (global.get $kUp)) (then
-      [[store $Action MoveAction.id $actMove]]
-      [[store $Action MoveAction.dx 0]]
-      [[store $Action MoveAction.dy -1]]
+    (if (i32.or (i32.or
+      (i32.eq (local.get $ch) (global.get $kUp))
+      (i32.eq (local.get $ch) (global.get $kNumUp)))
+      (i32.eq (local.get $ch) (global.get $kViUp)))
+    (then
+      [[store $currentAction Action.id $actBump]]
+      [[store $currentAction Action.dx 0]]
+      [[store $currentAction Action.dy -1]]
       (return)
     ))
-    (if (i32.eq (local.get $ch) (global.get $kRight)) (then
-      [[store $Action MoveAction.id $actMove]]
-      [[store $Action MoveAction.dx 1]]
-      [[store $Action MoveAction.dy 0]]
+
+    (if (i32.or (i32.or
+      (i32.eq (local.get $ch) (global.get $kRight))
+      (i32.eq (local.get $ch) (global.get $kNumRight)))
+      (i32.eq (local.get $ch) (global.get $kViRight)))
+    (then
+      [[store $currentAction Action.id $actBump]]
+      [[store $currentAction Action.dx 1]]
+      [[store $currentAction Action.dy 0]]
       (return)
     ))
-    (if (i32.eq (local.get $ch) (global.get $kDown)) (then
-      [[store $Action MoveAction.id $actMove]]
-      [[store $Action MoveAction.dx 0]]
-      [[store $Action MoveAction.dy 1]]
+
+    (if (i32.or (i32.or
+      (i32.eq (local.get $ch) (global.get $kDown))
+      (i32.eq (local.get $ch) (global.get $kNumDown)))
+      (i32.eq (local.get $ch) (global.get $kViDown)))
+    (then
+      [[store $currentAction Action.id $actBump]]
+      [[store $currentAction Action.dx 0]]
+      [[store $currentAction Action.dy 1]]
       (return)
     ))
-    (if (i32.eq (local.get $ch) (global.get $kLeft)) (then
-      [[store $Action MoveAction.id $actMove]]
-      [[store $Action MoveAction.dx -1]]
-      [[store $Action MoveAction.dy 0]]
+
+    (if (i32.or (i32.or
+      (i32.eq (local.get $ch) (global.get $kLeft))
+      (i32.eq (local.get $ch) (global.get $kNumLeft)))
+      (i32.eq (local.get $ch) (global.get $kViLeft)))
+    (then
+      [[store $currentAction Action.id $actBump]]
+      [[store $currentAction Action.dx -1]]
+      [[store $currentAction Action.dy 0]]
+      (return)
+    ))
+
+    (if (i32.or (i32.or
+      (i32.eq (local.get $ch) (global.get $kWait))
+      (i32.eq (local.get $ch) (global.get $kNumWait)))
+      (i32.eq (local.get $ch) (global.get $kViWait)))
+    (then
+      [[store $currentAction Action.id $actWait]]
       (return)
     ))
 
     (if (i32.eq (local.get $ch) (global.get $kGenerate)) (then
-      [[store $Action GenerateAction.id $actGenerate]]
+      [[store $currentAction Action.id $actGenerate]]
+      (return)
+    ))
+  )
+
+  (func $gmDeadInput (param $ch i32)
+    (if (i32.or
+      (i32.eq (local.get $ch) (global.get $kEscape))
+      (i32.eq (local.get $ch) (global.get $kGenerate))
+    ) (then
+      [[store $currentAction Action.id $actGenerate]]
       (return)
     ))
   )
@@ -700,10 +883,8 @@
       (if (i32.and
         (i32.eq (local.get $x) [[load $pos Position.x]])
         (i32.eq (local.get $y) [[load $pos Position.y]])
-      ) (then
-        (local.get $eid)
-        (return)
-      ))
+      ) (return (local.get $eid))
+      )
 
       (local.set $pos (i32.add (local.get $pos) [[= sizeof_Position]]))
       (br_if $entities (i32.le_u
@@ -728,10 +909,8 @@
           (i32.eq (local.get $y) [[load $pos Position.y]])
         )
         (call $isSolid (local.get $eid))
-      ) (then
-        (local.get $eid)
-        (return)
-      ))
+      ) (return (local.get $eid))
+      )
 
       (local.set $pos (i32.add (local.get $pos) [[= sizeof_Position]]))
       (br_if $entities (i32.le_u
@@ -756,7 +935,7 @@
 
     (local.set $eid (call $spawnEntity))
     (call $setSolid (local.get $eid))
-    (call $attachPosition (local.get $eid) (local.get $x) (local.get $y))
+    [[attach $eid Position x=$x y=$y]]
 
     (if (i32.le_u (local.get $roll) (i32.const 80)) (then
       (call $constructOrc (local.get $eid))
@@ -767,18 +946,22 @@
   )
 
   (func $constructOrc (param $eid i32)
-    (call $attachAppearance (local.get $eid) [[= 'o']] [[= 0x3f7f3f00 ]])
+    [[attach $eid Appearance ch='o' colour=0x3f7f3f00 layer=layerActor name="Orc"]]
+    [[attach $eid AI fn=$aiHostile]]
+    [[attach $eid Fighter maxhp=10 hp=10 defence=0 power=3]]
   )
   (func $constructTroll (param $eid i32)
-    (call $attachAppearance (local.get $eid) [[= 'T']] [[= 0x007f0000 ]])
+    [[attach $eid Appearance ch='T' colour=0x007f0000 layer=layerActor name="Troll"]]
+    [[attach $eid AI fn=$aiHostile]]
+    [[attach $eid Fighter maxhp=16 hp=16 defence=1 power=4]]
   )
 
-  (func $makePlayer (param $x i32) (param $y i32)
-    (call $setSolid (global.get $playerID))
-    (call $attachAppearance (global.get $playerID)
-      (global.get $chAt) (global.get $cWhite))
-    (call $attachPosition (global.get $playerID)
-      (local.get $x) (local.get $y))
+  (func $constructPlayer (param $eid i32) (param $x i32) (param $y i32)
+    (call $setPlayer (local.get $eid))
+    (call $setSolid (local.get $eid))
+    [[attach $eid Appearance ch='@' colour=0xffffff00 layer=layerActor name="Player"]]
+    [[attach $eid Fighter maxhp=32 hp=32 defence=2 power=5]]
+    [[attach $eid Position x=$x y=$y]]
   )
 
   (func $drawFg (param $x i32) (param $y i32) (param $ch i32) (param $fg i32)
@@ -802,20 +985,30 @@
   [[system RenderEntity Appearance Position]]
     (local $x i32)
     (local $y i32)
+    (local $display i32)
 
     (local.set $x [[load $Position Position.x]])
     (local.set $y [[load $Position Position.y]])
+    (local.set $display (call $getDisplayLayerXY (local.get $x) (local.get $y)))
 
-    (if (i32.and
+    (if (i32.and (i32.and
       (call $isOnScreen (local.get $x) (local.get $y))
-      (call $isVisible (local.get $x) (local.get $y))
-    ) (call $drawFg
+      (call $isVisible (local.get $x) (local.get $y)))
+      (i32.gt_s [[load $Appearance Appearance.layer]] (i32.load8_s (local.get $display)))
+    ) (then
+      (call $drawFg
         (i32.sub (local.get $x) (global.get $displayMinX))
         (i32.sub (local.get $y) (global.get $displayMinY))
         [[load $Appearance Appearance.ch]]
         [[load $Appearance Appearance.colour]]
       )
-    )
+      (i32.store8 (local.get $display) [[load $Appearance Appearance.layer]])
+    ))
+  [[/system]]
+
+  [[system RunAI AI]]
+    (global.set $currentEntity (local.get $eid))
+    (call_indirect $fnLookup [[load $AI AI.fn]])
   [[/system]]
 
   (func $centreOnPlayer
@@ -1105,7 +1298,262 @@
   )
 
   (func $render
+    (call $memset (global.get $DisplayLayer) [[= layerEmpty]] [[= sizeof_DisplayLayer]])
+
     (call $renderDungeon)
     (call $sysRenderEntity)
+
+    (call $renderUI)
   )
+
+  [[reserve dijkstraQueue mapSize*2]]
+  (global $dijkstraPtr (mut i32) (i32.const 0))
+  (global $dijkstraEnd (mut i32) (i32.const 0))
+
+  (func $dijkstra (param $sx i32) (param $sy i32) (param $dx i32) (param $dy i32) (param $etarget i32) (result i32)
+    (local $x i32)
+    (local $y i32)
+    (local $cost i32)
+
+    (call $memset (global.get $PathMap) (i32.const -1) (global.get $mapSize))
+    (i32.store8 (call $getPathMapXY (local.get $sx) (local.get $sy)) (i32.const 0))
+    (global.set $dijkstraPtr (global.get $dijkstraQueue))
+    (global.set $dijkstraEnd (global.get $dijkstraQueue))
+    (call $dijkstraEnqueue (local.get $sx) (local.get $sy))
+
+    (loop $algo
+      (local.set $x (i32.load8_u (global.get $dijkstraPtr)))
+      (local.set $y (i32.load8_u (i32.add (global.get $dijkstraPtr) (i32.const 1))))
+
+      (if (i32.and
+        (i32.eq (local.get $x) (local.get $dx))
+        (i32.eq (local.get $y) (local.get $dy))
+      ) (return (i32.const 1)))
+
+      (global.set $dijkstraPtr (i32.add (global.get $dijkstraPtr) (i32.const 2)))
+      (local.set $cost (i32.add (i32.load8_u (call $getPathMapXY (local.get $x) (local.get $y))) (i32.const 1)))
+
+      (call $dijkstraNeighbour (local.get $x) (local.get $y) (local.get $cost) (local.get $etarget) (i32.const -1) (i32.const  0))
+      (call $dijkstraNeighbour (local.get $x) (local.get $y) (local.get $cost) (local.get $etarget) (i32.const  0) (i32.const -1))
+      (call $dijkstraNeighbour (local.get $x) (local.get $y) (local.get $cost) (local.get $etarget) (i32.const  1) (i32.const  0))
+      (call $dijkstraNeighbour (local.get $x) (local.get $y) (local.get $cost) (local.get $etarget) (i32.const  0) (i32.const  1))
+
+      (br_if $algo (i32.lt_u (global.get $dijkstraPtr) (global.get $dijkstraEnd)))
+    )
+    (i32.const 0)
+  )
+
+  (func $dijkstraEnqueue (param $x i32) (param $y i32)
+    (i32.store8 (global.get $dijkstraEnd) (local.get $x))
+    (i32.store8 offset=1 (global.get $dijkstraEnd) (local.get $y))
+    (global.set $dijkstraEnd (i32.add (global.get $dijkstraEnd) (i32.const 2)))
+  )
+
+  (func $dijkstraNeighbour (param $sx i32) (param $sy i32) (param $cost i32) (param $etarget i32) (param $dx i32) (param $dy i32)
+    (local $x i32)
+    (local $y i32)
+    (local $pos i32)
+    (local $blocker i32)
+
+    (local.set $x (i32.add (local.get $sx) (local.get $dx)))
+    (local.set $y (i32.add (local.get $sy) (local.get $dy)))
+
+    (if (i32.eqz (call $isInBounds (local.get $x) (local.get $y))) (return))
+    (if (i32.eqz (call $isWalkable (local.get $x) (local.get $y))) (return))
+
+    (local.set $blocker (call $getBlockerAt (local.get $x) (local.get $y)))
+    (if (i32.and
+      (i32.ge_s (local.get $blocker) (i32.const 0))
+      (i32.ne (local.get $blocker) (local.get $etarget))
+    ) (return))
+
+    (local.set $pos (call $getPathMapXY (local.get $x) (local.get $y)))
+    (if (i32.lt_u (local.get $cost) (i32.load8_u (local.get $pos))) (then
+      (i32.store8 (local.get $pos) (local.get $cost))
+      (call $dijkstraEnqueue (local.get $x) (local.get $y))
+    ))
+  )
+
+  (func $dijkstraBest (param $x i32) (param $y i32) (result i32)
+    (local $u i32)
+    (local $r i32)
+    (local $d i32)
+    (local $l i32)
+
+    (local.set $u (i32.load8_u (call $getPathMapXY
+      (local.get $x)
+      (i32.add (local.get $y) (i32.const -1))
+    )))
+    (local.set $r (i32.load8_u (call $getPathMapXY
+      (i32.add (local.get $x) (i32.const 1))
+      (local.get $y)
+    )))
+    (local.set $d (i32.load8_u (call $getPathMapXY
+      (local.get $x)
+      (i32.add (local.get $y) (i32.const 1))
+    )))
+    (local.set $l (i32.load8_u (call $getPathMapXY
+      (i32.add (local.get $x) (i32.const -1))
+      (local.get $y)
+    )))
+
+    (if (i32.lt_u (local.get $u) (local.get $r)) (then
+      (if (i32.lt_u (local.get $u) (local.get $d)) (then
+        (if (i32.lt_u (local.get $u) (local.get $l))
+          (return (global.get $dirUp))
+          (return (global.get $dirLeft))
+        )
+      ) (else
+        (if (i32.lt_u (local.get $d) (local.get $l))
+          (return (global.get $dirDown))
+          (return (global.get $dirLeft))
+        )
+      ))
+    ))
+    (if (i32.lt_u (local.get $r) (local.get $d)) (then
+      (if (i32.lt_u (local.get $r) (local.get $l))
+        (return (global.get $dirRight))
+        (return (global.get $dirLeft))
+      )
+    ))
+    (if (i32.lt_u (local.get $d) (local.get $l))
+      (return (global.get $dirDown))
+    )
+    (global.get $dirLeft)
+  )
+
+  (func $getDirX (param $dir i32) (result i32)
+    (if (i32.eq (local.get $dir) (global.get $dirLeft)) (return (i32.const -1)))
+    (if (i32.eq (local.get $dir) (global.get $dirRight)) (return (i32.const 1)))
+    (i32.const 0)
+  )
+  (func $getDirY (param $dir i32) (result i32)
+    (if (i32.eq (local.get $dir) (global.get $dirUp)) (return (i32.const -1)))
+    (if (i32.eq (local.get $dir) (global.get $dirDown)) (return (i32.const 1)))
+    (i32.const 0)
+  )
+
+  (func $applyNoneAI
+    [[store $currentAction Action.eid $currentEntity]]
+    [[store $currentAction Action.id $actWait]]
+    (call $applyWaitAction)
+  )
+
+  (func $applyHostileAI
+    (local $target i32)
+    (local $distance i32)
+    (local $pos i32)
+    (local $tpos i32)
+    (local $x i32)
+    (local $y i32)
+    (local $tx i32)
+    (local $ty i32)
+    (local $dx i32)
+    (local $dy i32)
+    (local $dir i32)
+
+    (local.set $target (global.get $playerID))
+    (local.set $tpos (call $getPosition (local.get $target)))
+    (local.set $pos (call $getPosition (global.get $currentEntity)))
+
+    (local.set $dx (i32.sub (local.tee $tx [[load $tpos Position.x]]) (local.tee $x [[load $pos Position.x]])))
+    (local.set $dy (i32.sub (local.tee $ty [[load $tpos Position.y]]) (local.tee $y [[load $pos Position.y]])))
+    ;; Manhattan distance
+    (local.set $distance (i32.add (call $abs (local.get $dx)) (call $abs (local.get $dy))))
+
+    [[store $currentAction Action.eid $currentEntity]]
+
+    (if (call $isVisible [[load $pos Position.x]] [[load $pos Position.y]]) (then
+      (if (i32.le_s (local.get $distance) (i32.const 1)) (then
+        [[store $currentAction Action.id $actMelee]]
+        [[store $currentAction Action.dx $dx]]
+        [[store $currentAction Action.dy $dy]]
+        (call $applyMeleeAction)
+        (return)
+      ))
+
+      ;; TODO run dijkstra once per tick, only check if reachable here
+      (if (call $dijkstra (local.get $tx) (local.get $ty) (local.get $x) (local.get $y) (global.get $currentEntity)) (then
+        (local.set $dir (call $dijkstraBest (local.get $x) (local.get $y)))
+        [[store $currentAction Action.id $actMove]]
+        [[store $currentAction Action.dx (call $getDirX (local.get $dir))]]
+        [[store $currentAction Action.dy (call $getDirY (local.get $dir))]]
+        (call $applyMoveAction)
+        (return)
+      ))
+    ))
+
+    [[store $currentAction Action.id $actWait]]
+    (call $applyWaitAction)
+  )
+
+  (func $getName (param $eid i32) (result i32)
+    (if (call $hasAppearance (local.get $eid)) (then
+      [[load (call $getAppearance (local.get $eid)) Appearance.name]]
+      (return)
+    ))
+    [[s "something"]]
+  )
+
+  (func $addToLog (param $s i32)
+    ;; TODO addToLog
+    (call $debug (local.get $s))
+  )
+
+  (func $checkKill (param $eid i32)
+    (local $fighter i32)
+    (local $s i32)
+
+    (local.set $fighter (call $getFighter (local.get $eid)))
+    (if (i32.gt_s [[load $fighter Fighter.hp]] (i32.const 0)) (return))
+
+    (if (call $isPlayer (local.get $eid)) (then
+      (local.set $s [[s "You died!"]])
+      (global.set $gameMode (global.get $gmDead))
+    ) (else
+      (local.set $s (global.get $tempString))
+      (local.set $s (call $strcpy (local.get $s) (call $getName (local.get $eid))))
+      (call $strcpy (local.get $s) [[s " is dead!"]]) (drop)
+      (local.set $s (global.get $tempString))
+    ))
+    (call $addToLog (local.get $s))
+
+    [[attach $eid Appearance ch='%' colour=0xbf000000 layer=layerCorpse name="corpse"]]
+    (call $unsetSolid (local.get $eid))
+    (call $detachAI (local.get $eid))
+  )
+
+  (func $puts (param $s i32) (param $x i32) (param $y i32) (param $fg i32) (param $bg i32)
+    (local $ch i32)
+
+    (loop $str
+      (local.set $ch (i32.load8_u (local.get $s)))
+      (if (i32.eqz (local.get $ch)) (return))
+
+      (call $drawFgBg (local.get $x) (local.get $y) (local.get $ch) (local.get $fg) (local.get $bg))
+
+      (local.set $s (i32.add (local.get $s) (i32.const 1)))
+      (local.set $x (i32.add (local.get $x) (i32.const 1)))
+      (br $str)
+    )
+  )
+
+  (func $renderUI
+    (local $s i32)
+    (local $pc i32)
+    (local $y i32)
+
+    (local.set $pc (call $getFighter (global.get $playerID)))
+    (local.set $y (i32.sub (global.get $displayHeight) (i32.const 2)))
+
+    (local.set $s (global.get $tempString))
+    (local.set $s (call $strcpy (local.get $s) [[s "HP: "]]))
+    (local.set $s (call $strcpy (local.get $s) (call $itoa [[load $pc Fighter.hp]])))
+    (local.set $s (call $strcpy (local.get $s) [[s "/"]]))
+    (local.set $s (call $strcpy (local.get $s) (call $itoa [[load $pc Fighter.maxhp]])))
+    (call $puts (global.get $tempString) (i32.const 1) (local.get $y) [[= 0xcccccc00]] [[= 0x00000000]])
+  )
+
+  (data $stringData (offset [[= Strings]]) [[strings]])
+  [[memory memory]]
 )

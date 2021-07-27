@@ -21,6 +21,8 @@ Preprocessor commands:
 
 - `[[eval expression]]` runs `expression` in JavaScript and returns the result as `(i32.const whatever)`. Also aliased as `[[= ]]`.
 - `[[eval64 expression]]` is the same thing but results in an `i64`. Also aliased as `[[=64 ]]`. Thinking of refactoring this (maybe `[[= type ...]]`?)
+- `[[string expression]]` is similar but it expects the result to be a string. It stores it in the string table and returns an offset to the data.
+- `[[strings]]` returns the content of the string table for filling a `(data)`.
 - `[[consts prefix start names...]]` defines an enumerated set of `(global)`s. It also defines `_Next` as one higher than the largest defined constant.
 - `[[struct name field:type...]]` defines a memory structure. It also defines `sizeof_name`.
 - `[[reserve name amount export]]` saves the position of the data pointer in a `(global)` then moves the data pointer `amount` ahead. `export` is optional.
@@ -30,12 +32,17 @@ Preprocessor commands:
 - `[[load pointer struct.field]]` reads a structure field using `pointer` as the start of the structure.
 - `[[store pointer struct.field value]]` writes a structure field using `pointer` as the start of the structure.
 - `[[component name field:type...]]` is like `[[struct]]` but it also defines a mask constant and functions to check presence, get, attach and detach components from entities.
+- `[[attach entity struct field=value...]]` attaches a component to a given entity (saves you having to remember the field order).
 - `[[system Name component...]]` generates two functions:
 
   - `sysName()` which runs the system on all matching entities
   - `doName(id, component...)` which runs the system on one entity
 
   It is ended by `[[/system]]`, which closes the function body for `doName`.
+
+`[[string]]` relies on the following environment:
+
+- `$Strings: i32`
 
 `[[component]]` and `[[system]]` rely on the following environment:
 
@@ -63,29 +70,36 @@ My memory layout is dynamic because my preprocessor handles it. Here's what is i
 | 0      | 19\*2       | Tile types      |
 | 40     | 1..3        | Current action  |
 | 48     | 256\*8      | Entity data     |
-| 1280   | 256\*5      | Appearance data |
-| 3376   | 256\*2      | Position data   |
-| 3888   | 32\*4       | Room data       |
-| 4016   | 100\*100    | TileMap         |
-| 14016  | 100\*100    | VisibleMap      |
-| 24016  | 100\*100    | KnownMap        |
-| 34016  | 100\*100    | Display (chars) |
-| 44016  | 100\*100\*4 | Display (fg)    |
-| 84016  | 100\*100\*4 | Display (bg)    |
-| 124016 | -           | -               |
+| 2096   | 256\*10     | Appearance data |
+| 4656   | 256\*1      | AI data         |
+| 4912   | 256\*16     | Fighter data    |
+| 9008   | 256\*2      | Position data   |
+| 9520   | 32\*4       | Room data       |
+| 9648   | 100\*100    | TileMap         |
+| 19648  | 100\*100    | VisibleMap      |
+| 29648  | 100\*100    | KnownMap        |
+| 39648  | 100\*100    | PathMap         |
+| 49648  | 100\*100    | Display (chars) |
+| 59648  | 100\*100\*4 | Display (fg)    |
+| 99648  | 100\*100\*4 | Display (bg)    |
+| 139648 | 100\*100\   | Display (layer) |
+| 149648 | 1000        | Strings         |
+| 150648 | 100         | temp string     |
+| 150748 | 20          | temp (itoa)     |
+| 150768 | 100\*100\*2 | dijkstra queue  |
+| 170768 | -           | -               |
 
-So, my data currently fits in two WebAssembly memory pages (64kB each).
-
-### Actions
-
-The equivalent of the tutorial's Action subclasses are stored like this:
-
-| ID  | Arguments       | Type |
-| --- | --------------- | ---- |
-| 00  |                 | None |
-| 01  | `s8` dx `s8` dy | Move |
+So, my data currently fits in three WebAssembly memory pages (64kB each).
 
 ## Log
+
+### 2021-07-27
+
+Finally done with part 6! There were a lot of technical things to do here and I'm almost certain I solved them in the worst possible way.
+
+### 2021-07-26
+
+Only slightly late, started on combat (part 6). Refactored action code a bit because it was annoying me.
 
 ### 2021-07-19
 

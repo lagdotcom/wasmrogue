@@ -129,6 +129,8 @@ class Preprocessor {
   processors: Record<string, Processor>;
   ptr!: number;
   structures!: Record<string, Structure>;
+  stringData!: string;
+  stringOffsets!: Record<string, number>;
 
   constructor(public verbose: boolean = false) {
     this.env = {};
@@ -136,6 +138,7 @@ class Preprocessor {
       "=": this.evaluate.bind(this),
       "=64": this.evaluate64.bind(this),
       align: this.align.bind(this),
+      attach: this.attach.bind(this),
       component: this.component.bind(this),
       consts: this.consts.bind(this),
       data: this.data.bind(this),
@@ -144,7 +147,11 @@ class Preprocessor {
       load: this.load.bind(this),
       memory: this.memory.bind(this),
       reserve: this.reserve.bind(this),
+      s: this.string.bind(this),
       store: this.store.bind(this),
+      str: this.string.bind(this),
+      string: this.string.bind(this),
+      strings: this.strings.bind(this),
       struct: this.struct.bind(this),
       system: this.system.bind(this),
       "/system": this.systemEnd.bind(this),
@@ -165,6 +172,8 @@ class Preprocessor {
     this.global = [];
     this.local = [];
     this.ptr = 0;
+    this.stringData = "";
+    this.stringOffsets = {};
     this.structures = {};
   }
 
@@ -174,9 +183,14 @@ class Preprocessor {
 
   private evalNumber(code: string) {
     const value = this.eval(code);
-    // evaluate single chars as their key code
-    if (typeof value === "string" && value.length === 1)
-      return value.charCodeAt(0);
+
+    if (typeof value === "string") {
+      // evaluate single chars as their key code
+      if (value.length === 1) return value.charCodeAt(0);
+
+      // add to string data
+      return this.addString(value);
+    }
 
     if (typeof value !== "number" || isNaN(value))
       throw this.error(`isNaN: ${code} = ${value}`);
@@ -583,6 +597,49 @@ class Preprocessor {
 
   systemEnd() {
     return ")";
+  }
+
+  string(...value: string[]) {
+    const src = value.join(" ");
+    const result = this.eval(src);
+    if (typeof result !== "string") throw this.error(`Not a string: ${src}`);
+
+    return `(i32.const ${this.addString(result)})`;
+  }
+
+  private addString(value: string) {
+    if (!(value in this.stringOffsets)) {
+      const offset = this.env.Strings + this.stringData.length;
+      this.stringData += value + "\0";
+      this.stringOffsets[value] = offset;
+    }
+
+    return this.stringOffsets[value];
+  }
+
+  strings() {
+    return `"${this.stringData.replaceAll("\0", "\\00")}"`;
+  }
+
+  attach(offset: string, name: string, ...fields: string[]) {
+    const s = this.structures[name];
+    if (!s) throw this.error(`Unknown structure: ${name}`);
+
+    const fieldNames = Object.keys(s.fields);
+    const data: Record<string, string> = Object.fromEntries(
+      fieldNames.map((name) => [name, "(i32.const 0)"])
+    );
+    fields.forEach((fstring) => {
+      const [fname, fvalue] = fstring.split("=");
+      const f = s.fields[fname];
+      if (!f) throw this.error(`Unknown structure field: ${name}.${fname}`);
+
+      const value = this.evaluate(fvalue);
+      data[fname] = value;
+    });
+
+    const fdata = fieldNames.map((fn) => data[fn]).join(" ");
+    return `(call $attach${name} ${this.evaluate(offset)} ${fdata})`;
   }
 }
 
