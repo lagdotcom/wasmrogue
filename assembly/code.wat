@@ -72,6 +72,7 @@
   (global $maxMonstersPerRoom i32 (i32.const 2))
 
   [[struct Action id:u8 dx:s8 dy:s8 eid:u8]]
+  [[consts dir 0 Up Right Down Left]]
 
   [[reserve currentAction sizeof_Action]]
   [[align 8]]
@@ -109,8 +110,6 @@
   [[reserve tempString 100]]
   [[reserve itoaString 20]]
   (global $itoaStringEnd i32 [[= itoaString + sizeof_itoaString - 1]])
-
-  [[memory memory]]
 
   ;; TODO would prefer to put these in stdlib, but then they don't reference the same memory...
   (func $memset (param $addr i32) (param $ch i32) (param $size i32)
@@ -612,6 +611,19 @@
     )
   )
 
+  (func $getPathMapXY (param $x i32) (param $y i32) (result i32)
+    (i32.add
+      (global.get $PathMap)
+      (i32.add
+        (i32.mul
+          (global.get $mapWidth)
+          (local.get $y)
+        )
+        (local.get $x)
+      )
+    )
+  )
+
   (func $getTileType (param $id i32) (result i32)
     (i32.add
       (global.get $TileTypes)
@@ -703,7 +715,9 @@
       [[load $currentAction Action.dy]]
     )
 
-    (if (call $playerNearEdge) (call $centreOnPlayer))
+    (if (call $isPlayer [[load $currentAction Action.eid]]) (then
+      (if (call $playerNearEdge) (call $centreOnPlayer))
+    ))
   )
 
   (func $applyBumpAction
@@ -739,7 +753,6 @@
       ;; TODO tried to attack nothing?
       (return)
     ))
-
 
     (if (i32.eqz (call $hasFighter (local.get $me))) (then
       ;; TODO not a combatant
@@ -1293,6 +1306,133 @@
     (call $renderUI)
   )
 
+  [[reserve dijkstraQueue mapSize*2]]
+  (global $dijkstraPtr (mut i32) (i32.const 0))
+  (global $dijkstraEnd (mut i32) (i32.const 0))
+
+  (func $dijkstra (param $sx i32) (param $sy i32) (param $dx i32) (param $dy i32) (param $etarget i32) (result i32)
+    (local $x i32)
+    (local $y i32)
+    (local $cost i32)
+
+    (call $memset (global.get $PathMap) (i32.const -1) (global.get $mapSize))
+    (i32.store8 (call $getPathMapXY (local.get $sx) (local.get $sy)) (i32.const 0))
+    (global.set $dijkstraPtr (global.get $dijkstraQueue))
+    (global.set $dijkstraEnd (global.get $dijkstraQueue))
+    (call $dijkstraEnqueue (local.get $sx) (local.get $sy))
+
+    (loop $algo
+      (local.set $x (i32.load8_u (global.get $dijkstraPtr)))
+      (local.set $y (i32.load8_u (i32.add (global.get $dijkstraPtr) (i32.const 1))))
+
+      (if (i32.and
+        (i32.eq (local.get $x) (local.get $dx))
+        (i32.eq (local.get $y) (local.get $dy))
+      ) (return (i32.const 1)))
+
+      (global.set $dijkstraPtr (i32.add (global.get $dijkstraPtr) (i32.const 2)))
+      (local.set $cost (i32.add (i32.load8_u (call $getPathMapXY (local.get $x) (local.get $y))) (i32.const 1)))
+
+      (call $dijkstraNeighbour (local.get $x) (local.get $y) (local.get $cost) (local.get $etarget) (i32.const -1) (i32.const  0))
+      (call $dijkstraNeighbour (local.get $x) (local.get $y) (local.get $cost) (local.get $etarget) (i32.const  0) (i32.const -1))
+      (call $dijkstraNeighbour (local.get $x) (local.get $y) (local.get $cost) (local.get $etarget) (i32.const  1) (i32.const  0))
+      (call $dijkstraNeighbour (local.get $x) (local.get $y) (local.get $cost) (local.get $etarget) (i32.const  0) (i32.const  1))
+
+      (br_if $algo (i32.lt_u (global.get $dijkstraPtr) (global.get $dijkstraEnd)))
+    )
+    (i32.const 0)
+  )
+
+  (func $dijkstraEnqueue (param $x i32) (param $y i32)
+    (i32.store8 (global.get $dijkstraEnd) (local.get $x))
+    (i32.store8 offset=1 (global.get $dijkstraEnd) (local.get $y))
+    (global.set $dijkstraEnd (i32.add (global.get $dijkstraEnd) (i32.const 2)))
+  )
+
+  (func $dijkstraNeighbour (param $sx i32) (param $sy i32) (param $cost i32) (param $etarget i32) (param $dx i32) (param $dy i32)
+    (local $x i32)
+    (local $y i32)
+    (local $pos i32)
+    (local $blocker i32)
+
+    (local.set $x (i32.add (local.get $sx) (local.get $dx)))
+    (local.set $y (i32.add (local.get $sy) (local.get $dy)))
+
+    (if (i32.eqz (call $isInBounds (local.get $x) (local.get $y))) (return))
+    (if (i32.eqz (call $isWalkable (local.get $x) (local.get $y))) (return))
+
+    (local.set $blocker (call $getBlockerAt (local.get $x) (local.get $y)))
+    (if (i32.and
+      (i32.ge_s (local.get $blocker) (i32.const 0))
+      (i32.ne (local.get $blocker) (local.get $etarget))
+    ) (return))
+
+    (local.set $pos (call $getPathMapXY (local.get $x) (local.get $y)))
+    (if (i32.lt_u (local.get $cost) (i32.load8_u (local.get $pos))) (then
+      (i32.store8 (local.get $pos) (local.get $cost))
+      (call $dijkstraEnqueue (local.get $x) (local.get $y))
+    ))
+  )
+
+  (func $dijkstraBest (param $x i32) (param $y i32) (result i32)
+    (local $u i32)
+    (local $r i32)
+    (local $d i32)
+    (local $l i32)
+
+    (local.set $u (i32.load8_u (call $getPathMapXY
+      (local.get $x)
+      (i32.add (local.get $y) (i32.const -1))
+    )))
+    (local.set $r (i32.load8_u (call $getPathMapXY
+      (i32.add (local.get $x) (i32.const 1))
+      (local.get $y)
+    )))
+    (local.set $d (i32.load8_u (call $getPathMapXY
+      (local.get $x)
+      (i32.add (local.get $y) (i32.const 1))
+    )))
+    (local.set $l (i32.load8_u (call $getPathMapXY
+      (i32.add (local.get $x) (i32.const -1))
+      (local.get $y)
+    )))
+
+    (if (i32.lt_u (local.get $u) (local.get $r)) (then
+      (if (i32.lt_u (local.get $u) (local.get $d)) (then
+        (if (i32.lt_u (local.get $u) (local.get $l))
+          (return (global.get $dirUp))
+          (return (global.get $dirLeft))
+        )
+      ) (else
+        (if (i32.lt_u (local.get $d) (local.get $l))
+          (return (global.get $dirDown))
+          (return (global.get $dirLeft))
+        )
+      ))
+    ))
+    (if (i32.lt_u (local.get $r) (local.get $d)) (then
+      (if (i32.lt_u (local.get $r) (local.get $l))
+        (return (global.get $dirRight))
+        (return (global.get $dirLeft))
+      )
+    ))
+    (if (i32.lt_u (local.get $d) (local.get $l))
+      (return (global.get $dirDown))
+    )
+    (global.get $dirLeft)
+  )
+
+  (func $getDirX (param $dir i32) (result i32)
+    (if (i32.eq (local.get $dir) (global.get $dirLeft)) (return (i32.const -1)))
+    (if (i32.eq (local.get $dir) (global.get $dirRight)) (return (i32.const 1)))
+    (i32.const 0)
+  )
+  (func $getDirY (param $dir i32) (result i32)
+    (if (i32.eq (local.get $dir) (global.get $dirUp)) (return (i32.const -1)))
+    (if (i32.eq (local.get $dir) (global.get $dirDown)) (return (i32.const 1)))
+    (i32.const 0)
+  )
+
   (func $applyNoneAI
     [[store $currentAction Action.eid $currentEntity]]
     [[store $currentAction Action.id $actWait]]
@@ -1304,15 +1444,20 @@
     (local $distance i32)
     (local $pos i32)
     (local $tpos i32)
+    (local $x i32)
+    (local $y i32)
+    (local $tx i32)
+    (local $ty i32)
     (local $dx i32)
     (local $dy i32)
+    (local $dir i32)
 
     (local.set $target (global.get $playerID))
     (local.set $tpos (call $getPosition (local.get $target)))
     (local.set $pos (call $getPosition (global.get $currentEntity)))
 
-    (local.set $dx (i32.sub [[load $tpos Position.x]] [[load $pos Position.x]]))
-    (local.set $dy (i32.sub [[load $tpos Position.y]] [[load $pos Position.y]]))
+    (local.set $dx (i32.sub (local.tee $tx [[load $tpos Position.x]]) (local.tee $x [[load $pos Position.x]])))
+    (local.set $dy (i32.sub (local.tee $ty [[load $tpos Position.y]]) (local.tee $y [[load $pos Position.y]])))
     ;; Manhattan distance
     (local.set $distance (i32.add (call $abs (local.get $dx)) (call $abs (local.get $dy))))
 
@@ -1327,7 +1472,15 @@
         (return)
       ))
 
-      ;; TODO calculate path, if exists move
+      ;; TODO run dijkstra once per tick, only check if reachable here
+      (if (call $dijkstra (local.get $tx) (local.get $ty) (local.get $x) (local.get $y) (global.get $currentEntity)) (then
+        (local.set $dir (call $dijkstraBest (local.get $x) (local.get $y)))
+        [[store $currentAction Action.id $actMove]]
+        [[store $currentAction Action.dx (call $getDirX (local.get $dir))]]
+        [[store $currentAction Action.dy (call $getDirY (local.get $dir))]]
+        (call $applyMoveAction)
+        (return)
+      ))
     ))
 
     [[store $currentAction Action.id $actWait]]
@@ -1401,7 +1554,6 @@
     (call $puts (global.get $tempString) (i32.const 1) (local.get $y) [[= 0xcccccc00]] [[= 0x00000000]])
   )
 
-  (data $stringData (offset [[= Strings]])
-    [[strings]]
-  )
+  (data $stringData (offset [[= Strings]]) [[strings]])
+  [[memory memory]]
 )
