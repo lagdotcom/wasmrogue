@@ -8,7 +8,29 @@
 
     }(wglt));
 
-    const keys = [wglt.exports.Keys.VK_LEFT, wglt.exports.Keys.VK_UP, wglt.exports.Keys.VK_RIGHT, wglt.exports.Keys.VK_DOWN, wglt.exports.Keys.VK_G];
+    const keys = [
+        // Arrows
+        wglt.exports.Keys.VK_LEFT,
+        wglt.exports.Keys.VK_UP,
+        wglt.exports.Keys.VK_RIGHT,
+        wglt.exports.Keys.VK_DOWN,
+        wglt.exports.Keys.VK_CLEAR,
+        // Numpad
+        wglt.exports.Keys.VK_NUMPAD4,
+        wglt.exports.Keys.VK_NUMPAD8,
+        wglt.exports.Keys.VK_NUMPAD6,
+        wglt.exports.Keys.VK_NUMPAD2,
+        wglt.exports.Keys.VK_NUMPAD5,
+        // VI keys
+        wglt.exports.Keys.VK_H,
+        wglt.exports.Keys.VK_K,
+        wglt.exports.Keys.VK_L,
+        wglt.exports.Keys.VK_J,
+        wglt.exports.Keys.VK_PERIOD,
+        // other stuff
+        wglt.exports.Keys.VK_ESCAPE,
+        wglt.exports.Keys.VK_G,
+    ];
     class Display {
         i;
         container;
@@ -56,7 +78,9 @@
         }
     }
 
-    var module = "code.wasm";
+    var mainUrl = "code.wasm";
+
+    var stdlibUrl = "stdlib.wasm";
 
     const range = (max) => Array.from(Array(max).keys());
     const rng = (min, max) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -70,6 +94,7 @@
         entities;
         maxEntities;
         map;
+        raw;
         tileTypes;
         constructor(i) {
             this.i = i;
@@ -81,6 +106,7 @@
             this.entities = new DataView(empty);
             this.maxEntities = 0;
             this.map = new DataView(empty);
+            this.raw = new DataView(empty);
             this.tileTypes = [];
         }
         get mapWidth() {
@@ -104,24 +130,60 @@
         slice(start, length) {
             return new DataView(this.i.memory.buffer, start, length);
         }
+        string(offset) {
+            const bytes = [];
+            for (;; offset++) {
+                const ch = this.raw.getUint8(offset);
+                if (ch === 0)
+                    return String.fromCharCode(...bytes);
+                bytes.push(ch);
+            }
+        }
         entity(id) {
             const mask = this.entities.getBigUint64(id * this.i.gEntitySize.value, true);
             const e = { id };
             if (mask & this.bits.Appearance)
                 e.Appearance = this.appearance(id);
+            if (mask & this.bits.AI)
+                e.AI = this.ai(id);
+            if (mask & this.bits.Fighter)
+                e.Fighter = this.fighter(id);
             if (mask & this.bits.Position)
                 e.Position = this.position(id);
+            if (mask & this.bits.Player)
+                e.Player = true;
             if (mask & this.bits.Solid)
                 e.Solid = true;
             return e;
         }
         appearance(id) {
-            const size = 5;
+            const size = 10;
             const offset = id * size + this.i.gAppearances.value;
             const mem = this.slice(offset, size);
             return {
                 ch: mem.getUint8(0),
-                fg: mem.getUint32(1, true),
+                layer: mem.getUint8(1),
+                fg: mem.getUint32(2, true),
+                name: this.string(mem.getUint32(6, true)),
+            };
+        }
+        ai(id) {
+            const size = 1;
+            const offset = id * size + this.i.gAIs.value;
+            const mem = this.slice(offset, size);
+            return {
+                fn: mem.getUint8(0),
+            };
+        }
+        fighter(id) {
+            const size = 16;
+            const offset = id * size + this.i.gFighters.value;
+            const mem = this.slice(offset, size);
+            return {
+                maxHp: mem.getUint32(0, true),
+                hp: mem.getInt32(4, true),
+                defence: mem.getUint32(8, true),
+                power: mem.getUint32(12, true),
             };
         }
         position(id) {
@@ -155,10 +217,14 @@
             this.display = this.slice(this.i.gDisplay.value, this.displaySize);
             this.displayFg = this.slice(this.i.gDisplayFG.value, this.displaySize * 4);
             this.displayBg = this.slice(this.i.gDisplayBG.value, this.displaySize * 4);
+            this.raw = new DataView(this.i.memory.buffer);
             this.tileTypes = range(this.i.gTileTypeCount.value).map((id) => this.tt(id));
             this.bits = {
                 Appearance: this.i.Mask_Appearance.value,
+                AI: this.i.Mask_AI.value,
+                Fighter: this.i.Mask_Fighter.value,
                 Position: this.i.Mask_Position.value,
+                Player: this.i.Mask_Player.value,
                 Solid: this.i.Mask_Solid.value,
             };
         }
@@ -166,9 +232,24 @@
             return this.i.input(id);
         }
     }
-    const getInterface = () => WebAssembly.instantiateStreaming(fetch(module), {
-        host: { rng },
-    }).then(({ instance }) => new WasmInterface(instance.exports));
+    const getWASM = (url, imports) => new Promise((resolve, reject) => {
+        WebAssembly.instantiateStreaming(fetch(url), imports)
+            .then(({ instance }) => resolve(instance.exports))
+            .catch(reject);
+    });
+    async function getInterface() {
+        let iface = undefined;
+        const debug = (offset) => {
+            if (!iface)
+                return;
+            const message = iface.string(offset);
+            console.log(message);
+        };
+        const stdlib = await getWASM(stdlibUrl);
+        const main = await getWASM(mainUrl, { stdlib, host: { debug, rng } });
+        iface = new WasmInterface(main);
+        return iface;
+    }
 
     getInterface().then((i) => {
         const container = document.getElementById("container") || document.body;

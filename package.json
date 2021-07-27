@@ -9,7 +9,7 @@
     "make": "jake",
     "rollup": "rollup -c",
     "watch": "rollup -cw",
-    "build": "npm run wasm:pp && npm run wasm:build && npm run rollup"
+    "build": "npm run make && npm run rollup"
   },
   "author": "Lag.Com <lagdotcom@gmail.com>",
   "license": "ISC",

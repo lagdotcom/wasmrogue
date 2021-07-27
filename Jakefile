@@ -20,7 +20,7 @@ task("build", wat.map(compiled));
 // define compilation tasks
 wat.forEach((fn) =>
   file(compiled(fn), [processed(fn)], () =>
-    execSync(`wat2wasm ${processed(fn)} --debug-names -o ${compiled(fn)}`)
+    execSync(`wat2wasm ${processed(fn)} -o ${compiled(fn)}`)
   )
 );
 
