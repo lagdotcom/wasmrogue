@@ -8,8 +8,23 @@
 
   (global $chAt i32 [[= '@']])
 
+  ;; colour names from https://www.htmlcsscolor.com/
+  (global $cBlack i32 (i32.const 0x00000000))
+  (global $cCornHarvest i32 (i32.const 0x826e3200))
+  (global $cDarkSlateBlue i32 (i32.const 0x32329600))
+  (global $cDodgerBlue i32 (i32.const 0x20a0ff00))
+  (global $cFreeSpeechRed i32 (i32.const 0xbf000000))
+  (global $cGainsboro i32 (i32.const 0xe0e0e000))
+  (global $cGreen i32 (i32.const 0x007f0000))
+  (global $cJapaneseLaurel i32 (i32.const 0x3f7f3f00))
+  (global $cNavy i32 (i32.const 0x00006400))
+  (global $cNeonCarrot i32 (i32.const 0xffa03000))
+  (global $cOldGold i32 (i32.const 0xc8b43200))
+  (global $cRedOrange i32 (i32.const 0xff303000))
+  (global $cSealBrown i32 (i32.const 0x40101000))
   (global $cWhite i32 (i32.const 0xffffff00))
   (global $cYellow i32 (i32.const 0xffff0000))
+  (global $cYourPink i32 (i32.const 0xffc0c000))
 
   (global $kLeft i32 (i32.const 37))
   (global $kUp i32 (i32.const 38))
@@ -30,6 +45,7 @@
   (global $kViWait i32 (i32.const 190))
 
   (global $kEscape i32 (i32.const 27))
+  (global $kSpace i32 [[= ' ']])
   (global $kGenerate i32 [[= 'G']])
 
   [[consts gm 0 Dungeon Dead]]
@@ -43,8 +59,8 @@
   [[reserve TileTypes sizeof_Tile*2 gTileTypes]]
   [[align 8]]
   (data $tileTypeData (offset [[= TileTypes]])
-    [[data Tile walkable=1 transparent=1 ch='.' fg=0xffffff00 bg=0x32329600 fglight=0xffffff00 bglight=0xc8b43200]]
-    [[data Tile ch='#' fg=0xffffff00 bg=0x00006400 fglight=0xffffff00 bglight=0x826e3200]]
+    [[data Tile walkable=1 transparent=1 ch='.' fg=cWhite bg=cDarkSlateBlue fglight=cWhite bglight=cOldGold]]
+    [[data Tile ch='#' fg=cWhite bg=cNavy fglight=cWhite bglight=cCornHarvest]]
   )
   [[consts tt 0 Floor Wall]]
   (global $ttINVALID (export "gTileTypeCount") i32 [[= _Next]])
@@ -946,12 +962,12 @@
   )
 
   (func $constructOrc (param $eid i32)
-    [[attach $eid Appearance ch='o' colour=0x3f7f3f00 layer=layerActor name="Orc"]]
+    [[attach $eid Appearance ch='o' colour=cJapaneseLaurel layer=layerActor name="Orc"]]
     [[attach $eid AI fn=$aiHostile]]
     [[attach $eid Fighter maxhp=10 hp=10 defence=0 power=3]]
   )
   (func $constructTroll (param $eid i32)
-    [[attach $eid Appearance ch='T' colour=0x007f0000 layer=layerActor name="Troll"]]
+    [[attach $eid Appearance ch='T' colour=cGreen layer=layerActor name="Troll"]]
     [[attach $eid AI fn=$aiHostile]]
     [[attach $eid Fighter maxhp=16 hp=16 defence=1 power=4]]
   )
@@ -959,7 +975,7 @@
   (func $constructPlayer (param $eid i32) (param $x i32) (param $y i32)
     (call $setPlayer (local.get $eid))
     (call $setSolid (local.get $eid))
-    [[attach $eid Appearance ch='@' colour=0xffffff00 layer=layerActor name="Player"]]
+    [[attach $eid Appearance ch='@' colour=cWhite layer=layerActor name="Player"]]
     [[attach $eid Fighter maxhp=32 hp=32 defence=2 power=5]]
     [[attach $eid Position x=$x y=$y]]
   )
@@ -1518,12 +1534,26 @@
     ))
     (call $addToLog (local.get $s))
 
-    [[attach $eid Appearance ch='%' colour=0xbf000000 layer=layerCorpse name="corpse"]]
+    [[attach $eid Appearance ch='%' colour=cFreeSpeechRed layer=layerCorpse name="corpse"]]
     (call $unsetSolid (local.get $eid))
     (call $detachAI (local.get $eid))
   )
 
-  (func $puts (param $s i32) (param $x i32) (param $y i32) (param $fg i32) (param $bg i32)
+  (func $putsFg (param $s i32) (param $x i32) (param $y i32) (param $fg i32)
+    (local $ch i32)
+
+    (loop $str
+      (local.set $ch (i32.load8_u (local.get $s)))
+      (if (i32.eqz (local.get $ch)) (return))
+
+      (call $drawFg (local.get $x) (local.get $y) (local.get $ch) (local.get $fg))
+
+      (local.set $s (i32.add (local.get $s) (i32.const 1)))
+      (local.set $x (i32.add (local.get $x) (i32.const 1)))
+      (br $str)
+    )
+  )
+  (func $putsFgBg (param $s i32) (param $x i32) (param $y i32) (param $fg i32) (param $bg i32)
     (local $ch i32)
 
     (loop $str
@@ -1538,20 +1568,58 @@
     )
   )
 
+  (func $blankBg (param $sx i32) (param $sy i32) (param $w i32) (param $h i32) (param $bg i32)
+    (local $x i32)
+    (local $y i32)
+    (local $ex i32)
+    (local $ey i32)
+
+    (local.set $ex (i32.add (local.get $sx) (local.get $w)))
+    (local.set $ey (i32.add (local.get $sy) (local.get $h)))
+
+    (local.set $y (local.get $sy))
+    (loop $rows
+      (local.set $x (local.get $sx))
+      (loop $cols
+        (call $drawFgBg (local.get $x) (local.get $y) (global.get $kSpace) (i32.const 0) (local.get $bg))
+
+        (br_if $cols (i32.lt_u (local.tee $x (i32.add (local.get $x) (i32.const 1))) (local.get $ex)))
+      )
+
+      (br_if $rows (i32.lt_u (local.tee $y (i32.add (local.get $y) (i32.const 1))) (local.get $ey)))
+    )
+  )
+
   (func $renderUI
     (local $s i32)
     (local $pc i32)
     (local $y i32)
 
     (local.set $pc (call $getFighter (global.get $playerID)))
-    (local.set $y (i32.sub (global.get $displayHeight) (i32.const 2)))
+    (local.set $y (i32.sub (global.get $displayHeight) (i32.const 1)))
+    (call $renderBar [[s "HP: "]] [[load $pc Fighter.hp]] [[load $pc Fighter.maxhp]] (i32.const 0) (local.get $y) (i32.const 20))
+  )
+
+  (func $renderBar (param $label i32) (param $value i32) (param $max i32) (param $x i32) (param $y i32) (param $size i32)
+    (local $width i32)
+    (local $s i32)
+
+    (call $blankBg (local.get $x) (local.get $y) (local.get $size) (i32.const 1) (global.get $cSealBrown))
+
+    ;; bar_width = int(float(current_value) / maximum_value * total_width)
+    (if (i32.gt_s (local.tee $width (i32.trunc_f32_s (f32.mul (f32.div
+      (f32.convert_i32_s (local.get $value))
+      (f32.convert_i32_s (local.get $max))
+    ) (f32.convert_i32_s (local.get $size))))) (i32.const 0))
+      (call $blankBg (local.get $x) (local.get $y) (local.get $width) (i32.const 1) (global.get $cGreen))
+    )
 
     (local.set $s (global.get $tempString))
-    (local.set $s (call $strcpy (local.get $s) [[s "HP: "]]))
-    (local.set $s (call $strcpy (local.get $s) (call $itoa [[load $pc Fighter.hp]])))
+    (local.set $s (call $strcpy (local.get $s) (local.get $label)))
+    (local.set $s (call $strcpy (local.get $s) (call $itoa (local.get $value))))
     (local.set $s (call $strcpy (local.get $s) [[s "/"]]))
-    (local.set $s (call $strcpy (local.get $s) (call $itoa [[load $pc Fighter.maxhp]])))
-    (call $puts (global.get $tempString) (i32.const 1) (local.get $y) [[= 0xcccccc00]] [[= 0x00000000]])
+    (local.set $s (call $strcpy (local.get $s) (call $itoa (local.get $max))))
+    (call $putsFg (global.get $tempString) (i32.const 1) (local.get $y) [[= cWhite]])
   )
 
   (data $stringData (offset [[= Strings]]) [[strings]])
