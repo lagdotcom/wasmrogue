@@ -87,11 +87,16 @@ My memory layout is dynamic because my preprocessor handles it. Here's what is i
 | 150648 | 100         | temp string     |
 | 150748 | 20          | temp (itoa)     |
 | 150768 | 100\*100\*2 | dijkstra queue  |
-| 170768 | -           | -               |
+| 170768 | 105\*5      | message log     |
+| 171293 | -           | -               |
 
 So, my data currently fits in three WebAssembly memory pages (64kB each).
 
 ## Log
+
+### 2021-07-30
+
+Thought about implementing a proper allocator but put it off in favour of statically allocating enough room for messages (hopefully).
 
 ### 2021-07-27
 

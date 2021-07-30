@@ -120,10 +120,12 @@
   ;; TODO remove the need for this???
   [[reserve DisplayLayer 100*100]]
 
+  ;; TODO am I going to regret this
+  (global $maxStringSize i32 (i32.const 100))
   ;; TODO make sizeof_Strings dynamic
   [[reserve Strings 1000 gStrings]]
   (global $stringsSize (export "gStringsSize") i32 [[= sizeof_Strings]])
-  [[reserve tempString 100]]
+  [[reserve tempString maxStringSize]]
   [[reserve itoaString 20]]
   (global $itoaStringEnd i32 [[= itoaString + sizeof_itoaString - 1]])
 
@@ -146,6 +148,16 @@
         (local.tee $size (i32.sub (local.get $size) (i32.const 8)))
         (i32.const 0))
       )
+    )
+  )
+  (func $memcpy (param $dst i32) (param $src i32) (param $size i32)
+    (loop $cat
+      (i32.store8 (local.get $dst) (i32.load8_u (local.get $src)))
+
+      (local.set $dst (i32.add (local.get $dst) (i32.const 1)))
+      (local.set $src (i32.add (local.get $src) (i32.const 1)))
+
+      (br_if $cat (i32.gt_u (local.tee $size (i32.sub (local.get $size) (i32.const 1))) (i32.const 0)))
     )
   )
   (func $strcpy (param $dst i32) (param $src i32) (result i32)
@@ -192,6 +204,7 @@
     (global.set $displayHeight (local.get $h))
 
     (call $generateMap)
+    (call $addToLog [[s "Welcome to WASMrogue!"]] (global.get $cDodgerBlue))
     (call $render)
   )
 
@@ -757,6 +770,7 @@
     (local $victim i32)
     (local $damage i32)
     (local $s i32)
+    (local $fg i32)
 
     (local.set $me [[load $currentAction Action.eid]])
     (local.set $pos (call $getPosition (local.get $me)))
@@ -780,6 +794,11 @@
       (return)
     ))
 
+    (if (call $isPlayer (local.get $me))
+      (local.set $fg (global.get $cGainsboro))
+      (local.set $fg (global.get $cYourPink))
+    )
+
     (local.set $attacker (call $getFighter (local.get $me)))
     (local.set $victim (call $getFighter (local.get $enemy)))
     (local.set $damage (i32.sub [[load $attacker Fighter.power]] [[load $victim Fighter.defence]]))
@@ -794,12 +813,12 @@
       (local.set $s (call $strcpy (local.get $s) (call $itoa (local.get $damage))))
       (local.set $s (call $strcpy (local.get $s) [[s " hit points."]]))
       [[store $victim Fighter.hp (i32.sub [[load $victim Fighter.hp]] (local.get $damage))]]
-      (call $addToLog (global.get $tempString))
+      (call $addToLog (global.get $tempString) (local.get $fg))
 
       (call $checkKill (local.get $enemy))
     ) (else
       (local.set $s (call $strcpy (local.get $s) [[s " but does no damage."]]))
-      (call $addToLog (global.get $tempString))
+      (call $addToLog (global.get $tempString) (local.get $fg))
     ))
   )
 
@@ -1320,6 +1339,7 @@
     (call $sysRenderEntity)
 
     (call $renderUI)
+    (call $renderMessageLog)
   )
 
   [[reserve dijkstraQueue mapSize*2]]
@@ -1511,28 +1531,50 @@
     [[s "something"]]
   )
 
-  (func $addToLog (param $s i32)
-    ;; TODO addToLog
+  [[struct LogMsg fg:i32 count:u8]]
+  (global $logMsgSize (export "gMessageSize") i32 [[= sizeof_LogMsg+maxStringSize]])
+
+  (global $logCount (export "gMessageCount") i32 (i32.const 5))
+  [[reserve messageLog logMsgSize*logCount gMessageLog]]
+  (global $messageChunkSize i32 [[= logMsgSize*(logCount-1)]])
+  (global $secondMessage i32 [[= messageLog+logMsgSize]])
+  (global $lastMessage i32 [[= messageLog+sizeof_messageLog-logMsgSize]])
+
+  (func $addToLog (param $s i32) (param $fg i32)
+    (local $o i32)
+
     (call $debug (local.get $s))
+
+    ;; TODO check message is not identical
+
+    (call $memcpy (global.get $messageLog) (global.get $secondMessage) (global.get $messageChunkSize))
+
+    (local.set $o (global.get $lastMessage))
+    [[store $o LogMsg.fg $fg]]
+    [[store $o LogMsg.count 1]]
+    (call $strcpy (i32.add (local.get $o) [[= sizeof_LogMsg]]) (local.get $s)) (drop)
   )
 
   (func $checkKill (param $eid i32)
     (local $fighter i32)
     (local $s i32)
+    (local $fg i32)
 
     (local.set $fighter (call $getFighter (local.get $eid)))
     (if (i32.gt_s [[load $fighter Fighter.hp]] (i32.const 0)) (return))
 
     (if (call $isPlayer (local.get $eid)) (then
       (local.set $s [[s "You died!"]])
+      (local.set $fg (global.get $cRedOrange))
       (global.set $gameMode (global.get $gmDead))
     ) (else
       (local.set $s (global.get $tempString))
       (local.set $s (call $strcpy (local.get $s) (call $getName (local.get $eid))))
       (call $strcpy (local.get $s) [[s " is dead!"]]) (drop)
       (local.set $s (global.get $tempString))
+      (local.set $fg (global.get $cNeonCarrot))
     ))
-    (call $addToLog (local.get $s))
+    (call $addToLog (local.get $s) (local.get $fg))
 
     [[attach $eid Appearance ch='%' colour=cFreeSpeechRed layer=layerCorpse name="corpse"]]
     (call $unsetSolid (local.get $eid))
@@ -1587,6 +1629,25 @@
       )
 
       (br_if $rows (i32.lt_u (local.tee $y (i32.add (local.get $y) (i32.const 1))) (local.get $ey)))
+    )
+  )
+
+  (func $renderMessageLog
+    (local $y i32)
+    (local $msg i32)
+
+    (local.set $msg (global.get $lastMessage))
+    (local.set $y (i32.sub (global.get $displayHeight) (i32.const 1)))
+    (loop $messages
+      (if (i32.gt_s [[load $msg LogMsg.count]] (i32.const 0)) (then
+        ;; TODO word wrap
+        (call $putsFg (i32.add (local.get $msg) (i32.const 5)) (i32.const 21) (local.get $y) [[load $msg LogMsg.fg]])
+        (local.set $y (i32.sub (local.get $y) (i32.const 1)))
+      ))
+
+      ;; TODO this doesn't match the tutorial - it should track y and stop rendering past a certain point
+
+      (br_if $messages (i32.ge_s (local.tee $msg (i32.sub (local.get $msg) (global.get $logMsgSize))) (global.get $messageLog)))
     )
   )
 
