@@ -733,9 +733,9 @@
     ;; TODO could this be a table?
     (if (i32.eq (global.get $gameMode) (global.get $gmDungeon)) (call $gmDungeonInput (local.get $ch)))
     (if (i32.eq (global.get $gameMode) (global.get $gmDead)) (call $gmDeadInput (local.get $ch)))
-    (call $applyAction)
 
     [[load $currentAction Action.id]]
+    (call $applyAction)
   )
 
   (table $fnLookup anyfunc (elem
