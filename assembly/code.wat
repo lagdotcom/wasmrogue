@@ -189,7 +189,7 @@
       (local.set $a (i32.add (local.get $a) (i32.const 1)))
       (local.set $b (i32.add (local.get $b) (i32.const 1)))
 
-      (br_if $eq (i32.or (i32.eqz (local.get $ach)) (i32.eqz (local.get $bch))))
+      (br_if $eq (i32.ne (local.get $ach) (i32.const 0)))
     )
 
     (i32.const 1)
@@ -198,11 +198,18 @@
     (local $s i32)
     (local $mod i32)
     (local $digit i32)
+    (local $neg i32)
 
     (if (i32.eqz (local.get $n)) (return [[s "0"]]))
 
     (i32.store8 (local.tee $s (global.get $itoaStringEnd)) (i32.const 0))
     (i32.store8 (i32.sub (local.get $s) (i32.const 1)) [[= '0']])
+
+    ;; deal with negative numbers
+    (if (i32.lt_s (local.get $n) (i32.const 0)) (then
+      (local.set $neg (i32.const 1))
+      (local.set $n (i32.sub (i32.const 0) (local.get $n)))
+    ))
 
     (local.set $mod (i32.const 1))
     (loop $digits
@@ -212,7 +219,17 @@
       (i32.store8 (local.tee $s (i32.sub (local.get $s) (i32.const 1))) (i32.add (local.get $digit) [[= '0']]))
 
       (local.set $mod (i32.mul (local.get $mod) (i32.const 10)))
-      (br_if $digits (i32.ge_u (local.get $n) (local.get $mod)))
+
+      ;; bail out if we've run out of digits somehow?
+      (br_if $digits (i32.and
+        (i32.ge_u (local.get $n) (local.get $mod))
+        (i32.gt_u (local.get $mod) (i32.const 0))
+      ))
+    )
+
+    ;; prefix a - if it was negative
+    (if (local.get $neg)
+      (i32.store8 (local.tee $s (i32.sub (local.get $s) (i32.const 1))) [[= '-']])
     )
 
     (local.get $s)
@@ -1682,9 +1699,8 @@
     (local.set $msg (global.get $lastMessage))
     (local.set $y (i32.sub (global.get $displayHeight) (i32.const 1)))
     (loop $messages
-
       (if (i32.gt_s (local.tee $count [[load $msg LogMsg.count]]) (i32.const 0)) (then
-        (local.set $s (call $strcpy (global.get $tempString) (i32.add (local.get $msg) (i32.const 5))))
+        (local.set $s (call $strcpy (global.get $tempString) (i32.add (local.get $msg) [[= sizeof_LogMsg]])))
 
         (if (i32.gt_s (local.get $count) (i32.const 1)) (then
           (local.set $s (call $strcpy (local.get $s) [[s " (x"]]))
