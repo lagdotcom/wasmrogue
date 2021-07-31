@@ -54,6 +54,8 @@
   ;; TODO remove me
   (global $playerID (export "gPlayerID") (mut i32) (i32.const 0))
   (global $visionRange i32 (i32.const 8))
+  (global $mouseX (mut i32) (i32.const 0))
+  (global $mouseY (mut i32) (i32.const 0))
 
   [[struct Tile walkable:u8 transparent:u8 ch:u8 fg:i32 bg:i32 fglight:i32 bglight:i32]]
   [[reserve TileTypes sizeof_Tile*2 gTileTypes]]
@@ -738,6 +740,13 @@
     (call $applyAction)
   )
 
+  (func $mouseInput (export "hover") (param $x i32) (param $y i32)
+    (global.set $mouseX (i32.add (local.get $x) (global.get $displayMinX)))
+    (global.set $mouseY (i32.add (local.get $y) (global.get $displayMinY)))
+
+    (call $render)
+  )
+
   (table $fnLookup anyfunc (elem
     $applyNoAction
     $applyWaitAction
@@ -1064,6 +1073,20 @@
     (call_indirect $fnLookup [[load $AI AI.fn]])
   [[/system]]
 
+  [[reserve hoverString maxStringSize]]
+  (global $hoverStringPtr (mut i32) (i32.const 0))
+  [[system HoverList Appearance Position]]
+    (if (i32.and
+      (i32.eq [[load $Position Position.x]] (global.get $mouseX))
+      (i32.eq [[load $Position Position.y]] (global.get $mouseY))
+    ) (then
+      (if (i32.ne (global.get $hoverStringPtr) (global.get $hoverString))
+        (global.set $hoverStringPtr (call $strcpy (global.get $hoverStringPtr) [[s ", "]]))
+      )
+      (global.set $hoverStringPtr (call $strcpy (global.get $hoverStringPtr) [[load $Appearance Appearance.name]]))
+    ))
+  [[/system]]
+
   (func $centreOnPlayer
     (local $pos i32)
     (local.set $pos (call $getPosition (global.get $playerID)))
@@ -1355,9 +1378,7 @@
 
     (call $renderDungeon)
     (call $sysRenderEntity)
-
     (call $renderUI)
-    (call $renderMessageLog)
   )
 
   [[reserve dijkstraQueue mapSize*2]]
@@ -1683,6 +1704,20 @@
   )
 
   (func $renderUI
+    (call $renderStats)
+    (call $renderHover)
+    (call $renderMessageLog)
+  )
+
+  (func $renderHover
+    (i32.store8 (global.get $hoverString) (i32.const 0))
+    (global.set $hoverStringPtr (global.get $hoverString))
+
+    (call $sysHoverList)
+    (call $putsFgBg (global.get $hoverString) (i32.const 21) (i32.sub (global.get $displayHeight) (i32.const 6)) (global.get $cWhite) (global.get $cBlack))
+  )
+
+  (func $renderStats
     (local $s i32)
     (local $pc i32)
     (local $y i32)
@@ -1711,7 +1746,7 @@
     (local.set $s (call $strcpy (local.get $s) (call $itoa (local.get $value))))
     (local.set $s (call $strcpy (local.get $s) [[s "/"]]))
     (local.set $s (call $strcpy (local.get $s) (call $itoa (local.get $max))))
-    (call $putsFg (global.get $tempString) (i32.const 1) (local.get $y) [[= cWhite]])
+    (call $putsFg (global.get $tempString) (i32.const 1) (local.get $y) (global.get $cWhite))
   )
 
   (data $stringData (offset [[= Strings]]) [[strings]])

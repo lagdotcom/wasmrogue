@@ -94,9 +94,13 @@ So, my data currently fits in three WebAssembly memory pages (64kB each).
 
 ## Log
 
+### 2021-07-31
+
+Added message count tracking and the cursor hover thing.
+
 ### 2021-07-30
 
-Thought about implementing a proper allocator but put it off in favour of statically allocating enough room for messages (hopefully).
+Thought about implementing a proper allocator but put it off in favour of statically allocating enough room for messages (hopefully). Finished message log.
 
 ### 2021-07-27
 

@@ -52,6 +52,7 @@ interface ModuleInterface {
   memory: WebAssembly.Memory;
 
   initialise(w: number, h: number): void;
+  hover(x: number, y: number): void;
   input(code: number): boolean;
   moveEntity(eid: number, mx: number, my: number): void;
 }
@@ -291,6 +292,10 @@ export class WasmInterface {
 
   input(id: number): boolean {
     return this.i.input(id);
+  }
+
+  hover(x: number, y: number): void {
+    this.i.hover(x, y);
   }
 }
 
