@@ -29,7 +29,12 @@
         wglt.exports.Keys.VK_PERIOD,
         // other stuff
         wglt.exports.Keys.VK_ESCAPE,
+        wglt.exports.Keys.VK_PAGE_UP,
+        wglt.exports.Keys.VK_PAGE_DOWN,
+        wglt.exports.Keys.VK_END,
+        wglt.exports.Keys.VK_HOME,
         wglt.exports.Keys.VK_G,
+        wglt.exports.Keys.VK_V,
     ];
     class Display {
         i;
@@ -37,6 +42,8 @@
         e;
         w;
         h;
+        mx;
+        my;
         term;
         constructor(i, container) {
             this.i = i;
@@ -45,12 +52,15 @@
             this.w = i.displayWidth;
             this.h = i.displayHeight;
             this.term = new wglt.exports.Terminal(this.e, this.w, this.h);
+            this.mx = 0;
+            this.my = 0;
             container.append(this.e);
             this.refresh();
             this.term.update = this.update.bind(this);
             this.e.focus();
         }
         update() {
+            let dirty = false;
             let k = 0;
             for (let i = 0; i < keys.length; i++) {
                 const vk = keys[i];
@@ -60,19 +70,28 @@
                 }
             }
             if (k && this.i.input(k))
+                dirty = true;
+            if (this.term.mouse.x !== this.mx || this.term.mouse.y !== this.my) {
+                this.mx = this.term.mouse.x;
+                this.my = this.term.mouse.y;
+                this.i.hover(this.mx, this.my);
+                dirty = true;
+            }
+            if (dirty)
                 this.refresh();
         }
         refresh() {
             const { term } = this;
             const { display, displayFg, displayBg } = this.i;
-            let i = 0;
+            let i = 0, j = 0;
             for (let y = 0; y < this.h; y++) {
                 for (let x = 0; x < this.w; x++) {
                     const ch = display.getUint8(i);
-                    const fg = displayFg.getUint32(i * 4, true);
-                    const bg = displayBg.getUint32(i * 4, true);
+                    const fg = displayFg.getUint32(j, true);
+                    const bg = displayBg.getUint32(j, true);
                     term.drawChar(x, y, ch, fg, bg);
                     i++;
+                    j += 4;
                 }
             }
         }
@@ -129,6 +148,21 @@
         }
         slice(start, length) {
             return new DataView(this.i.memory.buffer, start, length);
+        }
+        log() {
+            const messages = [];
+            let o = this.i.gMessageLog.value;
+            for (let i = 0; i < this.i.gMessageCount.value; i++) {
+                const count = this.raw.getUint8(o + 4);
+                if (count)
+                    messages.push({
+                        count,
+                        fg: this.raw.getUint32(o, true),
+                        message: this.string(o + 5),
+                    });
+                o += this.i.gMessageSize;
+            }
+            return messages;
         }
         string(offset) {
             const bytes = [];
@@ -231,6 +265,9 @@
         input(id) {
             return this.i.input(id);
         }
+        hover(x, y) {
+            this.i.hover(x, y);
+        }
     }
     const getWASM = (url, imports) => new Promise((resolve, reject) => {
         WebAssembly.instantiateStreaming(fetch(url), imports)
@@ -240,7 +277,7 @@
     async function getInterface() {
         let iface = undefined;
         const debug = (offset) => {
-            if (!iface)
+            if (!iface || iface.raw.byteLength === 0)
                 return;
             const message = iface.string(offset);
             console.log(message);
@@ -254,7 +291,7 @@
     getInterface().then((i) => {
         const container = document.getElementById("container") || document.body;
         window.i = i;
-        i.initialise(60, 40);
+        i.initialise(80, 40);
         const d = new Display(i, container);
         window.d = d;
     });
