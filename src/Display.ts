@@ -26,7 +26,12 @@ const keys = [
 
   // other stuff
   Keys.VK_ESCAPE,
+  Keys.VK_PAGE_UP,
+  Keys.VK_PAGE_DOWN,
+  Keys.VK_END,
+  Keys.VK_HOME,
   Keys.VK_G,
+  Keys.VK_V,
 ];
 
 export default class Display {

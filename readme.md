@@ -86,9 +86,10 @@ My memory layout is dynamic because my preprocessor handles it. Here's what is i
 | 149648 | 1000        | Strings         |
 | 150648 | 100         | temp string     |
 | 150748 | 20          | temp (itoa)     |
-| 150768 | 100\*100\*2 | dijkstra queue  |
-| 170768 | 105\*5      | message log     |
-| 171293 | -           | -               |
+| 150768 | 100         | temp (hover)    |
+| 150868 | 100\*100\*2 | dijkstra queue  |
+| 170868 | 105\*100    | message log     |
+| 181368 | -           | -               |
 
 So, my data currently fits in three WebAssembly memory pages (64kB each).
 
@@ -96,7 +97,7 @@ So, my data currently fits in three WebAssembly memory pages (64kB each).
 
 ### 2021-07-31
 
-Added message count tracking and the cursor hover thing.
+Added message count tracking, the cursor hover thing and history viewer. That's part 7 done!
 
 ### 2021-07-30
 

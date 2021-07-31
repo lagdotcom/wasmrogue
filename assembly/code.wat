@@ -1,6 +1,7 @@
 (module
   (import "stdlib" "abs" (func $abs (param i32) (result i32)))
   (import "stdlib" "max" (func $max (param i32) (param i32) (result i32)))
+  (import "stdlib" "min" (func $min (param i32) (param i32) (result i32)))
 
   (import "host" "debug" (func $debug (param i32)))
   ;; TODO make my own rng!
@@ -45,11 +46,19 @@
   (global $kViWait i32 (i32.const 190))
 
   (global $kEscape i32 (i32.const 27))
+  (global $kPageUp i32 (i32.const 33))
+  (global $kPageDown i32 (i32.const 34))
+  (global $kEnd i32 (i32.const 35))
+  (global $kHome i32 (i32.const 36))
   (global $kSpace i32 [[= ' ']])
   (global $kGenerate i32 [[= 'G']])
+  (global $kHistory i32 [[= 'V']])
 
-  [[consts gm 0 Dungeon Dead]]
-  (global $gameMode (export "gGameMode") (mut i32) [[= gmDungeon]])
+  (global $inputChar (mut i32) (i32.const 0))
+  (global $gameMode (export "gGameMode") (mut i32) (i32.const 0))
+  (global $renderMode (mut i32) (i32.const 0))
+  (global $previousGameMode (mut i32) (i32.const 0))
+  (global $previousRenderMode (mut i32) (i32.const 0))
 
   ;; TODO remove me
   (global $playerID (export "gPlayerID") (mut i32) (i32.const 0))
@@ -111,6 +120,8 @@
 
   (global $displayWidth (export "gDisplayWidth") (mut i32) (i32.const 0))
   (global $displayHeight (export "gDisplayHeight") (mut i32) (i32.const 0))
+  (global $displaySize (mut i32) (i32.const 0))
+  (global $displayColourSize (mut i32) (i32.const 0))
   (global $displayMinX (export "gDisplayMinX") (mut i32) (i32.const 0))
   (global $displayMinY (export "gDisplayMinY") (mut i32) (i32.const 0))
   (global $displayMaxX (export "gDisplayMaxX") (mut i32) (i32.const 0))
@@ -235,10 +246,25 @@
     (local.get $s)
   )
 
+  (func $setMode (param $gm i32) (param $rm i32)
+    (global.set $gameMode (local.get $gm))
+    (global.set $renderMode (local.get $rm))
+  )
+  (func $saveMode
+    (global.set $previousGameMode (global.get $gameMode))
+    (global.set $previousRenderMode (global.get $renderMode))
+  )
+  (func $restoreMode
+    (global.set $gameMode (global.get $previousGameMode))
+    (global.set $renderMode (global.get $previousRenderMode))
+  )
+
   (func $initialise (export "initialise") (param $w i32) (param $h i32)
     ;; TODO check $w * $h < sizeof_Display
     (global.set $displayWidth (local.get $w))
     (global.set $displayHeight (local.get $h))
+    (global.set $displaySize (i32.mul (local.get $w) (local.get $h)))
+    (global.set $displayColourSize (i32.mul (global.get $displaySize) (i32.const 4)))
 
     (call $generateMap)
     (call $addToLog [[s "Welcome to WASMrogue!"]] (global.get $cDodgerBlue))
@@ -255,6 +281,11 @@
 
   (func $clearExploredMap
     (call $memset (global.get $ExploredMap) (i32.const 0) (global.get $mapSize))
+  )
+
+  (func $clearScreen
+    (call $memset (global.get $Display) (i32.const 0) (global.get $displaySize))
+    (call $memset (global.get $DisplayBG) (i32.const 0) (global.get $displayColourSize))
   )
 
   (func $clearEntities
@@ -505,7 +536,7 @@
 
     (call $centreOnPlayer)
     (call $updateFov)
-    (global.set $gameMode (global.get $gmDungeon))
+    (call $setMode (global.get $gmDungeon) (global.get $rmDungeon))
   )
 
   (func $placeEntities (param $rid i32)
@@ -749,9 +780,8 @@
     [[store $currentAction Action.id $actNone]]
     [[store $currentAction Action.eid $playerID]]
 
-    ;; TODO could this be a table?
-    (if (i32.eq (global.get $gameMode) (global.get $gmDungeon)) (call $gmDungeonInput (local.get $ch)))
-    (if (i32.eq (global.get $gameMode) (global.get $gmDead)) (call $gmDeadInput (local.get $ch)))
+    (global.set $inputChar (local.get $ch))
+    (call_indirect $fnLookup (global.get $gameMode))
 
     [[load $currentAction Action.id]]
     (call $applyAction)
@@ -770,13 +800,24 @@
     $applyMoveAction
     $applyBumpAction
     $applyMeleeAction
+    $applyDungeonAction
     $generateMap
+    $applyHistoryAction
 
     $applyNoneAI
     $applyHostileAI
+
+    $applyDungeonInput
+    $applyDeadInput
+    $applyHistoryInput
+
+    $applyDungeonRender
+    $applyHistoryRender
   ))
-  [[consts act 0 None Wait Move Bump Melee Generate]]
-  [[consts ai actGenerate+1 None Hostile]]
+  [[consts act 0 None Wait Move Bump Melee Dungeon Generate History]]
+  [[consts ai actHistory+1 None Hostile]]
+  [[consts gm aiHostile+1 Dungeon Dead History]]
+  [[consts rm gmHistory+1 Dungeon History]]
 
   (func $applyNoAction)
   (func $applyWaitAction)
@@ -866,6 +907,17 @@
     ))
   )
 
+  (global $historyCursor (mut i32) (i32.const 0))
+  (func $applyHistoryAction
+    (call $saveMode)
+    (call $setMode (global.get $gmHistory) (global.get $rmHistory))
+    (global.set $historyCursor (i32.const 0))
+  )
+
+  (func $applyDungeonAction
+    (call $restoreMode)
+  )
+
   (func $applyAction
     (call_indirect $fnLookup [[load $currentAction Action.id]])
 
@@ -874,8 +926,10 @@
     (call $render)
   )
 
-  (func $gmDungeonInput (param $ch i32)
-    ;; TODO convert to use tables?
+  (func $applyDungeonInput
+    (local $ch i32)
+    (local.set $ch (global.get $inputChar))
+
     (if (i32.or (i32.or
       (i32.eq (local.get $ch) (global.get $kUp))
       (i32.eq (local.get $ch) (global.get $kNumUp)))
@@ -933,14 +987,87 @@
       [[store $currentAction Action.id $actGenerate]]
       (return)
     ))
+
+    (if (i32.eq (local.get $ch) (global.get $kHistory)) (then
+      [[store $currentAction Action.id $actHistory]]
+      (return)
+    ))
   )
 
-  (func $gmDeadInput (param $ch i32)
+  (func $applyDeadInput
+    (local $ch i32)
+    (local.set $ch (global.get $inputChar))
+
     (if (i32.or
       (i32.eq (local.get $ch) (global.get $kEscape))
       (i32.eq (local.get $ch) (global.get $kGenerate))
     ) (then
       [[store $currentAction Action.id $actGenerate]]
+      (return)
+    ))
+
+    (if (i32.eq (local.get $ch) (global.get $kHistory)) (then
+      [[store $currentAction Action.id $actHistory]]
+      (return)
+    ))
+  )
+
+  (func $moveHistoryCursor (param $mod i32)
+    (global.set $historyCursor
+      (call $min (call $max
+        (i32.add (global.get $historyCursor) (local.get $mod))
+        (global.get $minLogCount)
+      ) (i32.const 0))
+    )
+
+    ;; claim I did an action
+    [[store $currentAction Action.id $actWait]]
+  )
+
+  (func $applyHistoryInput
+    (local $ch i32)
+    (local.set $ch (global.get $inputChar))
+
+    (if (i32.or (i32.or
+      (i32.eq (local.get $ch) (global.get $kUp))
+      (i32.eq (local.get $ch) (global.get $kNumUp)))
+      (i32.eq (local.get $ch) (global.get $kViUp)))
+    (then
+      (call $moveHistoryCursor (i32.const -1))
+      (return)
+    ))
+
+    (if (i32.or (i32.or
+      (i32.eq (local.get $ch) (global.get $kDown))
+      (i32.eq (local.get $ch) (global.get $kNumDown)))
+      (i32.eq (local.get $ch) (global.get $kViDown)))
+    (then
+      (call $moveHistoryCursor (i32.const 1))
+      (return)
+    ))
+
+    (if (i32.eq (local.get $ch) (global.get $kPageUp)) (then
+      (call $moveHistoryCursor (i32.const -10))
+      (return)
+    ))
+
+    (if (i32.eq (local.get $ch) (global.get $kPageDown)) (then
+      (call $moveHistoryCursor (i32.const 10))
+      (return)
+    ))
+
+    (if (i32.eq (local.get $ch) (global.get $kHome)) (then
+      (call $moveHistoryCursor (i32.const -9999))
+      (return)
+    ))
+
+    (if (i32.eq (local.get $ch) (global.get $kEnd)) (then
+      (call $moveHistoryCursor (i32.const 9999))
+      (return)
+    ))
+
+    (if (i32.eq (local.get $ch) (global.get $kEscape)) (then
+      [[store $currentAction Action.id $actDungeon]]
       (return)
     ))
   )
@@ -1391,11 +1518,25 @@
   )
 
   (func $render
+    (call_indirect (global.get $renderMode))
+  )
+
+  (func $applyDungeonRender
     (call $memset (global.get $DisplayLayer) [[= layerEmpty]] [[= sizeof_DisplayLayer]])
 
     (call $renderDungeon)
     (call $sysRenderEntity)
     (call $renderUI)
+  )
+
+  (func $applyHistoryRender
+    (call $clearScreen)
+    (call $renderMessageLog
+      (i32.const 0)
+      (i32.sub (global.get $displayHeight) (i32.const 1))
+      (i32.const 0)
+      (global.get $historyCursor)
+    )
   )
 
   [[reserve dijkstraQueue mapSize*2]]
@@ -1590,7 +1731,9 @@
   [[struct LogMsg fg:i32 count:u8]]
   (global $logMsgSize (export "gMessageSize") i32 [[= sizeof_LogMsg+maxStringSize]])
 
-  (global $logCount (export "gMessageCount") i32 (i32.const 5))
+  (global $logCount (export "gMessageCount") i32 (i32.const 100))
+  (global $minLogCount i32 [[= -logCount]])
+  (global $showLogCount i32 (i32.const 5))
   [[reserve messageLog logMsgSize*logCount gMessageLog]]
   (global $messageChunkSize i32 [[= logMsgSize*(logCount-1)]])
   (global $secondMessage i32 [[= messageLog+logMsgSize]])
@@ -1624,7 +1767,7 @@
     (if (call $isPlayer (local.get $eid)) (then
       (local.set $s [[s "You died!"]])
       (local.set $fg (global.get $cRedOrange))
-      (global.set $gameMode (global.get $gmDead))
+      (call $setMode (global.get $gmDead) (global.get $rmDungeon))
     ) (else
       (local.set $s (global.get $tempString))
       (local.set $s (call $strcpy (local.get $s) (call $getName (local.get $eid))))
@@ -1690,14 +1833,15 @@
     )
   )
 
-  (func $renderMessageLog
-    (local $y i32)
+  (func $renderMessageLog (param $x i32) (param $y i32) (param $minY i32) (param $offset i32)
     (local $msg i32)
     (local $s i32)
     (local $count i32)
 
-    (local.set $msg (global.get $lastMessage))
-    (local.set $y (i32.sub (global.get $displayHeight) (i32.const 1)))
+    (local.set $msg (i32.add
+      (global.get $lastMessage)
+      (i32.mul (local.get $offset) (global.get $logMsgSize))
+    ))
     (loop $messages
       (if (i32.gt_s (local.tee $count [[load $msg LogMsg.count]]) (i32.const 0)) (then
         (local.set $s (call $strcpy (global.get $tempString) (i32.add (local.get $msg) [[= sizeof_LogMsg]])))
@@ -1709,20 +1853,24 @@
         ))
 
         ;; TODO word wrap
-        (call $putsFgBg (global.get $tempString) (i32.const 21) (local.get $y) [[load $msg LogMsg.fg]] (global.get $cBlack))
+        (call $putsFgBg (global.get $tempString) (local.get $x) (local.get $y) [[load $msg LogMsg.fg]] (global.get $cBlack))
         (local.set $y (i32.sub (local.get $y) (i32.const 1)))
-      ))
+      ) (return))
 
-      ;; TODO this doesn't match the tutorial - it should track y and stop rendering past a certain point
-
-      (br_if $messages (i32.ge_s (local.tee $msg (i32.sub (local.get $msg) (global.get $logMsgSize))) (global.get $messageLog)))
+      (local.set $msg (i32.sub (local.get $msg) (global.get $logMsgSize)))
+      (br_if $messages (i32.ge_u (local.get $y) (local.get $minY)))
     )
   )
 
   (func $renderUI
     (call $renderStats)
     (call $renderHover)
-    (call $renderMessageLog)
+    (call $renderMessageLog
+      (i32.const 21)
+      (i32.sub (global.get $displayHeight) (i32.const 1))
+      (i32.sub (global.get $displayHeight) (i32.const 5))
+      (i32.const 0)
+    )
   )
 
   (func $renderHover

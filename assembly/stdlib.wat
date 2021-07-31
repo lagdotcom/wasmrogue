@@ -18,4 +18,14 @@
     ))
     (local.get $a)
   )
+
+  (func $min (export "min") (param $a i32) (param $b i32) (result i32)
+    (block (if (i32.lt_s (local.get $a) (local.get $b))
+      (then
+        (local.get $a)
+        (return)
+      )
+    ))
+    (local.get $b)
+  )
 )
