@@ -174,6 +174,24 @@
     ;; return address of closing NUL byte
     (i32.sub (local.get $dst) (i32.const 1))
   )
+  (func $streq (param $a i32) (param $b i32) (result i32)
+    (local $ach i32)
+    (local $bch i32)
+
+    (loop $eq
+      (if (i32.ne
+        (local.tee $ach (i32.load8_u (local.get $a)))
+        (local.tee $bch (i32.load8_u (local.get $b)))
+      ) (return (i32.const 0)))
+
+      (local.set $a (i32.add (local.get $a) (i32.const 1)))
+      (local.set $b (i32.add (local.get $b) (i32.const 1)))
+
+      (br_if $eq (i32.or (i32.eqz (local.get $ach)) (i32.eqz (local.get $bch))))
+    )
+
+    (i32.const 1)
+  )
   (func $itoa (param $n i32) (result i32)
     (local $s i32)
     (local $mod i32)
@@ -1545,11 +1563,13 @@
 
     (call $debug (local.get $s))
 
-    ;; TODO check message is not identical
+    (if (call $streq (local.get $s) (i32.add (local.tee $o (global.get $lastMessage)) [[= sizeof_LogMsg]])) (then
+      [[store $o LogMsg.count (i32.add [[load $o LogMsg.count]] (i32.const 1))]]
+      (return)
+    ))
 
     (call $memcpy (global.get $messageLog) (global.get $secondMessage) (global.get $messageChunkSize))
 
-    (local.set $o (global.get $lastMessage))
     [[store $o LogMsg.fg $fg]]
     [[store $o LogMsg.count 1]]
     (call $strcpy (i32.add (local.get $o) [[= sizeof_LogMsg]]) (local.get $s)) (drop)
@@ -1635,13 +1655,24 @@
   (func $renderMessageLog
     (local $y i32)
     (local $msg i32)
+    (local $s i32)
+    (local $count i32)
 
     (local.set $msg (global.get $lastMessage))
     (local.set $y (i32.sub (global.get $displayHeight) (i32.const 1)))
     (loop $messages
-      (if (i32.gt_s [[load $msg LogMsg.count]] (i32.const 0)) (then
+
+      (if (i32.gt_s (local.tee $count [[load $msg LogMsg.count]]) (i32.const 0)) (then
+        (local.set $s (call $strcpy (global.get $tempString) (i32.add (local.get $msg) (i32.const 5))))
+
+        (if (i32.gt_s (local.get $count) (i32.const 1)) (then
+          (local.set $s (call $strcpy (local.get $s) [[s " (x"]]))
+          (local.set $s (call $strcpy (local.get $s) (call $itoa (local.get $count))))
+          (local.set $s (call $strcpy (local.get $s) [[s ")"]]))
+        ))
+
         ;; TODO word wrap
-        (call $putsFg (i32.add (local.get $msg) (i32.const 5)) (i32.const 21) (local.get $y) [[load $msg LogMsg.fg]])
+        (call $putsFgBg (global.get $tempString) (i32.const 21) (local.get $y) [[load $msg LogMsg.fg]] (global.get $cBlack))
         (local.set $y (i32.sub (local.get $y) (i32.const 1)))
       ))
 
