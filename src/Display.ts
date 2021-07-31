@@ -1,4 +1,4 @@
-import { Keys, Terminal } from "wglt";
+import { Keys, Mouse, Terminal } from "wglt";
 
 import { WasmInterface } from "./interface";
 
@@ -26,13 +26,20 @@ const keys = [
 
   // other stuff
   Keys.VK_ESCAPE,
+  Keys.VK_PAGE_UP,
+  Keys.VK_PAGE_DOWN,
+  Keys.VK_END,
+  Keys.VK_HOME,
   Keys.VK_G,
+  Keys.VK_V,
 ];
 
 export default class Display {
   e: HTMLCanvasElement;
   w: number;
   h: number;
+  mx: number;
+  my: number;
   term: Terminal;
 
   constructor(private i: WasmInterface, private container: HTMLElement) {
@@ -41,6 +48,8 @@ export default class Display {
     this.h = i.displayHeight;
 
     this.term = new Terminal(this.e, this.w, this.h);
+    this.mx = 0;
+    this.my = 0;
 
     container.append(this.e);
     this.refresh();
@@ -50,6 +59,7 @@ export default class Display {
   }
 
   update() {
+    let dirty = false;
     let k = 0;
 
     for (let i = 0; i < keys.length; i++) {
@@ -60,22 +70,32 @@ export default class Display {
       }
     }
 
-    if (k && this.i.input(k)) this.refresh();
+    if (k && this.i.input(k)) dirty = true;
+    if (this.term.mouse.x !== this.mx || this.term.mouse.y !== this.my) {
+      this.mx = this.term.mouse.x;
+      this.my = this.term.mouse.y;
+      this.i.hover(this.mx, this.my);
+      dirty = true;
+    }
+
+    if (dirty) this.refresh();
   }
 
   refresh() {
     const { term } = this;
     const { display, displayFg, displayBg } = this.i;
 
-    let i = 0;
+    let i = 0,
+      j = 0;
     for (let y = 0; y < this.h; y++) {
       for (let x = 0; x < this.w; x++) {
         const ch = display.getUint8(i);
-        const fg = displayFg.getUint32(i * 4, true);
-        const bg = displayBg.getUint32(i * 4, true);
+        const fg = displayFg.getUint32(j, true);
+        const bg = displayBg.getUint32(j, true);
 
         term.drawChar(x, y, ch, fg, bg);
         i++;
+        j += 4;
       }
     }
   }

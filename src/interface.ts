@@ -45,11 +45,22 @@ interface ModuleInterface {
   gStrings: WebAssembly.Global;
   gStringsSize: WebAssembly.Global;
 
+  gMessageLog: WebAssembly.Global;
+  gMessageSize: WebAssembly.Global;
+  gMessageCount: WebAssembly.Global;
+
   memory: WebAssembly.Memory;
 
   initialise(w: number, h: number): void;
+  hover(x: number, y: number): void;
   input(code: number): boolean;
   moveEntity(eid: number, mx: number, my: number): void;
+}
+
+interface RLogMessage {
+  fg: number;
+  count: number;
+  message: string;
 }
 
 export interface RAppearance {
@@ -141,6 +152,25 @@ export class WasmInterface {
 
   private slice(start: number, length: number) {
     return new DataView(this.i.memory.buffer, start, length);
+  }
+
+  log() {
+    const messages: RLogMessage[] = [];
+    let o = this.i.gMessageLog.value;
+
+    for (let i = 0; i < this.i.gMessageCount.value; i++) {
+      const count = this.raw.getUint8(o + 4);
+      if (count)
+        messages.push({
+          count,
+          fg: this.raw.getUint32(o, true),
+          message: this.string(o + 5),
+        });
+
+      o += this.i.gMessageSize;
+    }
+
+    return messages;
   }
 
   string(offset: number) {
@@ -263,6 +293,10 @@ export class WasmInterface {
   input(id: number): boolean {
     return this.i.input(id);
   }
+
+  hover(x: number, y: number): void {
+    this.i.hover(x, y);
+  }
 }
 
 const getWASM = (url: string, imports?: WebAssembly.Imports) =>
@@ -275,7 +309,7 @@ const getWASM = (url: string, imports?: WebAssembly.Imports) =>
 async function getInterface() {
   let iface: WasmInterface | undefined = undefined;
   const debug = (offset: number) => {
-    if (!iface) return;
+    if (!iface || iface.raw.byteLength === 0) return;
 
     const message = iface.string(offset);
     console.log(message);
