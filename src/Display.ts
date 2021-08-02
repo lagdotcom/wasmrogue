@@ -32,6 +32,7 @@ const keys = [
   Keys.VK_HOME,
   Keys.VK_G,
   Keys.VK_V,
+  Keys.VK_F5,
 ];
 
 export default class Display {

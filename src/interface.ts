@@ -33,11 +33,18 @@ interface MainModule {
   gAppearances: WebAssembly.Global;
   Mask_AI: WebAssembly.Global;
   gAIs: WebAssembly.Global;
+  Mask_Carried: WebAssembly.Global;
+  gCarrieds: WebAssembly.Global;
+  Mask_Consumable: WebAssembly.Global;
+  gConsumables: WebAssembly.Global;
+  Mask_Inventory: WebAssembly.Global;
+  gInventories: WebAssembly.Global;
   Mask_Fighter: WebAssembly.Global;
   gFighters: WebAssembly.Global;
   Mask_Position: WebAssembly.Global;
   gPositions: WebAssembly.Global;
 
+  Mask_Item: WebAssembly.Global;
   Mask_Player: WebAssembly.Global;
   Mask_Solid: WebAssembly.Global;
 
@@ -89,11 +96,24 @@ export interface RAI {
   fn: number;
 }
 
+export interface RCarried {
+  carrier: number;
+}
+
+export interface RConsumable {
+  fn: number;
+  power: number;
+}
+
 export interface RFighter {
   maxHp: number;
   hp: number;
   defence: number;
   power: number;
+}
+
+export interface RInventory {
+  size: number;
 }
 
 export interface RPosition {
@@ -105,7 +125,11 @@ export interface REntity {
   id: number;
   Appearance?: RAppearance;
   AI?: RAI;
+  Carried?: RCarried;
+  Consumable?: RConsumable;
   Fighter?: RFighter;
+  Inventory?: RInventory;
+  Item?: boolean;
   Position?: RPosition;
   Player?: boolean;
   Solid?: boolean;
@@ -211,9 +235,13 @@ export class WasmInterface {
 
     if (mask & this.bits.Appearance) e.Appearance = this.appearance(id);
     if (mask & this.bits.AI) e.AI = this.ai(id);
+    if (mask & this.bits.Carried) e.Carried = this.carried(id);
+    if (mask & this.bits.Consumable) e.Consumable = this.consumable(id);
     if (mask & this.bits.Fighter) e.Fighter = this.fighter(id);
+    if (mask & this.bits.Inventory) e.Inventory = this.inventory(id);
     if (mask & this.bits.Position) e.Position = this.position(id);
 
+    if (mask & this.bits.Item) e.Item = true;
     if (mask & this.bits.Player) e.Player = true;
     if (mask & this.bits.Solid) e.Solid = true;
 
@@ -243,6 +271,27 @@ export class WasmInterface {
     };
   }
 
+  carried(id: number): RCarried {
+    const size = 1;
+    const offset = id * size + this.main.gCarrieds.value;
+    const mem = this.mainMem(offset, size);
+
+    return {
+      carrier: mem.getUint8(0),
+    };
+  }
+
+  consumable(id: number): RConsumable {
+    const size = 2;
+    const offset = id * size + this.main.gConsumables.value;
+    const mem = this.mainMem(offset, size);
+
+    return {
+      fn: mem.getUint8(0),
+      power: mem.getUint8(1),
+    };
+  }
+
   fighter(id: number): RFighter {
     const size = 16;
     const offset = id * size + this.main.gFighters.value;
@@ -253,6 +302,16 @@ export class WasmInterface {
       hp: mem.getInt32(4, true),
       defence: mem.getUint32(8, true),
       power: mem.getUint32(12, true),
+    };
+  }
+
+  inventory(id: number): RInventory {
+    const size = 1;
+    const offset = id * size + this.main.gInventories.value;
+    const mem = this.mainMem(offset, size);
+
+    return {
+      size: mem.getUint8(0),
     };
   }
 
@@ -311,7 +370,11 @@ export class WasmInterface {
     this.bits = {
       Appearance: this.main.Mask_Appearance.value,
       AI: this.main.Mask_AI.value,
+      Carried: this.main.Mask_Carried.value,
+      Consumable: this.main.Mask_Consumable.value,
       Fighter: this.main.Mask_Fighter.value,
+      Inventory: this.main.Mask_Inventory.value,
+      Item: this.main.Mask_Item.value,
       Position: this.main.Mask_Position.value,
       Player: this.main.Mask_Player.value,
       Solid: this.main.Mask_Solid.value,
