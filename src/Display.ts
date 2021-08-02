@@ -83,13 +83,13 @@ export default class Display {
 
   refresh() {
     const { term } = this;
-    const { display, displayFg, displayBg } = this.i;
+    const { displayChars, displayFg, displayBg } = this.i;
 
     let i = 0,
       j = 0;
     for (let y = 0; y < this.h; y++) {
       for (let x = 0; x < this.w; x++) {
-        const ch = display.getUint8(i);
+        const ch = displayChars.getUint8(i);
         const fg = displayFg.getUint32(j, true);
         const bg = displayBg.getUint32(j, true);
 

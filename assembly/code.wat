@@ -1,4 +1,19 @@
 (module
+  (import "display" "centreOn" (func $centreOn (param $x i32) (param $y i32)))
+  (import "display" "clear" (func $clearScreen))
+  (import "display" "resize" (func $resize (param $x i32) (param $y i32)))
+  (import "display" "drawFg" (func $drawFg (param $x i32) (param $y i32) (param $ch i32) (param $fg i32)))
+  (import "display" "drawFgBg" (func $drawFgBg (param $x i32) (param $y i32) (param $ch i32) (param $fg i32) (param $bg i32)))
+  (import "display" "getLayer" (func $getDisplayLayer (param $x i32) (param $y i32) (result i32)))
+  (import "display" "setLayer" (func $setDisplayLayer (param $x i32) (param $y i32) (param i32)))
+  (import "display" "contains" (func $isOnScreen (param $x i32) (param $y i32) (result i32)))
+  (import "display" "width" (global $displayWidth (mut i32)))
+  (import "display" "height" (global $displayHeight (mut i32)))
+  (import "display" "minX" (global $displayMinX (mut i32)))
+  (import "display" "minY" (global $displayMinY (mut i32)))
+  (import "display" "maxX" (global $displayMaxX (mut i32)))
+  (import "display" "maxY" (global $displayMaxY (mut i32)))
+
   (import "stdlib" "abs" (func $abs (param i32) (result i32)))
   (import "stdlib" "max" (func $max (param i32) (param i32) (result i32)))
   (import "stdlib" "min" (func $min (param i32) (param i32) (result i32)))
@@ -118,20 +133,7 @@
   [[reserve ExploredMap mapSize]]
   [[reserve PathMap mapSize]]
 
-  (global $displayWidth (export "gDisplayWidth") (mut i32) (i32.const 0))
-  (global $displayHeight (export "gDisplayHeight") (mut i32) (i32.const 0))
-  (global $displaySize (mut i32) (i32.const 0))
-  (global $displayColourSize (mut i32) (i32.const 0))
-  (global $displayMinX (export "gDisplayMinX") (mut i32) (i32.const 0))
-  (global $displayMinY (export "gDisplayMinY") (mut i32) (i32.const 0))
-  (global $displayMaxX (export "gDisplayMaxX") (mut i32) (i32.const 0))
-  (global $displayMaxY (export "gDisplayMaxY") (mut i32) (i32.const 0))
   (global $displayEdge i32 (i32.const 8))
-  [[reserve Display 100*100 gDisplay]]
-  [[reserve DisplayFG 100*100*4 gDisplayFG]]
-  [[reserve DisplayBG 100*100*4 gDisplayBG]]
-  ;; TODO remove the need for this???
-  [[reserve DisplayLayer 100*100]]
 
   ;; TODO am I going to regret this
   (global $maxStringSize i32 (i32.const 100))
@@ -260,12 +262,7 @@
   )
 
   (func $initialise (export "initialise") (param $w i32) (param $h i32)
-    ;; TODO check $w * $h < sizeof_Display
-    (global.set $displayWidth (local.get $w))
-    (global.set $displayHeight (local.get $h))
-    (global.set $displaySize (i32.mul (local.get $w) (local.get $h)))
-    (global.set $displayColourSize (i32.mul (global.get $displaySize) (i32.const 4)))
-
+    (call $resize (local.get $w) (local.get $h))
     (call $generateMap)
     (call $addToLog [[s "Welcome to WASMrogue!"]] (global.get $cDodgerBlue))
     (call $render)
@@ -281,11 +278,6 @@
 
   (func $clearExploredMap
     (call $memset (global.get $ExploredMap) (i32.const 0) (global.get $mapSize))
-  )
-
-  (func $clearScreen
-    (call $memset (global.get $Display) (i32.const 0) (global.get $displaySize))
-    (call $memset (global.get $DisplayBG) (i32.const 0) (global.get $displayColourSize))
   )
 
   (func $clearEntities
@@ -610,61 +602,6 @@
       (br_if $loopY (i32.ne
         (local.tee $y (i32.add (local.get $y) (i32.const 1)))
         (global.get $mapHeight))
-      )
-    )
-  )
-
-  (func $getDisplayXY (param $x i32) (param $y i32) (result i32)
-    (i32.add
-      (global.get $Display)
-      (i32.add
-        (i32.mul
-          (global.get $displayWidth)
-          (local.get $y)
-        )
-        (local.get $x)
-      )
-    )
-  )
-  (func $getDisplayFGXY (param $x i32) (param $y i32) (result i32)
-    (i32.add
-      (global.get $DisplayFG)
-      (i32.mul
-        (i32.add
-          (i32.mul
-            (global.get $displayWidth)
-            (local.get $y)
-          )
-          (local.get $x)
-        )
-        (i32.const 4)
-      )
-    )
-  )
-  (func $getDisplayBGXY (param $x i32) (param $y i32) (result i32)
-    (i32.add
-      (global.get $DisplayBG)
-      (i32.mul
-        (i32.add
-          (i32.mul
-            (global.get $displayWidth)
-            (local.get $y)
-          )
-          (local.get $x)
-        )
-        (i32.const 4)
-      )
-    )
-  )
-  (func $getDisplayLayerXY (param $x i32) (param $y i32) (result i32)
-    (i32.add
-      (global.get $DisplayLayer)
-      (i32.add
-        (i32.mul
-          (global.get $displayWidth)
-          (local.get $y)
-        )
-        (local.get $x)
       )
     )
   )
@@ -1170,45 +1107,27 @@
     [[attach $eid Position x=$x y=$y]]
   )
 
-  (func $drawFg (param $x i32) (param $y i32) (param $ch i32) (param $fg i32)
-    (i32.store8
-      (call $getDisplayXY (local.get $x) (local.get $y))
-      (local.get $ch)
-    )
-    (i32.store
-      (call $getDisplayFGXY (local.get $x) (local.get $y))
-      (local.get $fg)
-    )
-  )
-  (func $drawFgBg (param $x i32) (param $y i32) (param $ch i32) (param $fg i32) (param $bg i32)
-    (call $drawFg (local.get $x) (local.get $y) (local.get $ch) (local.get $fg))
-    (i32.store
-      (call $getDisplayBGXY (local.get $x) (local.get $y))
-      (local.get $bg)
-    )
-  )
-
   [[system RenderEntity Appearance Position]]
     (local $x i32)
     (local $y i32)
-    (local $display i32)
+    (local $dx i32)
+    (local $dy i32)
 
-    (local.set $x [[load $Position Position.x]])
-    (local.set $y [[load $Position Position.y]])
-    (local.set $display (call $getDisplayLayerXY (local.get $x) (local.get $y)))
+    (local.set $dx (i32.sub (local.tee $x [[load $Position Position.x]]) (global.get $displayMinX)))
+    (local.set $dy (i32.sub (local.tee $y [[load $Position Position.y]]) (global.get $displayMinY)))
 
     (if (i32.and (i32.and
       (call $isOnScreen (local.get $x) (local.get $y))
       (call $isVisible (local.get $x) (local.get $y)))
-      (i32.gt_s [[load $Appearance Appearance.layer]] (i32.load8_s (local.get $display)))
+      (i32.gt_s [[load $Appearance Appearance.layer]] (call $getDisplayLayer (local.get $dx) (local.get $dy)))
     ) (then
       (call $drawFg
-        (i32.sub (local.get $x) (global.get $displayMinX))
-        (i32.sub (local.get $y) (global.get $displayMinY))
+        (local.get $dx)
+        (local.get $dy)
         [[load $Appearance Appearance.ch]]
         [[load $Appearance Appearance.colour]]
       )
-      (i32.store8 (local.get $display) [[load $Appearance Appearance.layer]])
+      (call $setDisplayLayer (local.get $dx) (local.get $dy) [[load $Appearance Appearance.layer]])
     ))
   [[/system]]
 
@@ -1234,23 +1153,7 @@
   (func $centreOnPlayer
     (local $pos i32)
     (local.set $pos (call $getPosition (global.get $playerID)))
-
-    (global.set $displayMinX (i32.sub
-      [[load $pos Position.x]]
-      (i32.div_u (global.get $displayWidth) (i32.const 2))
-    ))
-    (global.set $displayMinY (i32.sub
-      [[load $pos Position.y]]
-      (i32.div_u (global.get $displayHeight) (i32.const 2))
-    ))
-    (global.set $displayMaxX (i32.add
-      (global.get $displayMinX)
-      (global.get $displayWidth)
-    ))
-    (global.set $displayMaxY (i32.add
-      (global.get $displayMinY)
-      (global.get $displayHeight)
-    ))
+    (call $centreOn [[load $pos Position.x]] [[load $pos Position.y]])
   )
 
   (func $playerNearEdge (result i32)
@@ -1270,19 +1173,6 @@
       (i32.or
         (i32.lt_s (local.get $dy) (global.get $displayEdge))
         (i32.ge_s (local.get $dy) (i32.sub (global.get $displayHeight) (global.get $displayEdge)))
-      )
-    )
-  )
-
-  (func $isOnScreen (param $x i32) (param $y i32) (result i32)
-    (i32.and
-      (i32.and
-        (i32.ge_s (local.get $x) (global.get $displayMinX))
-        (i32.lt_s (local.get $x) (global.get $displayMaxX))
-      )
-      (i32.and
-        (i32.ge_s (local.get $y) (global.get $displayMinY))
-        (i32.lt_s (local.get $y) (global.get $displayMaxY))
       )
     )
   )
@@ -1522,8 +1412,7 @@
   )
 
   (func $applyDungeonRender
-    (call $memset (global.get $DisplayLayer) [[= layerEmpty]] [[= sizeof_DisplayLayer]])
-
+    (call $clearScreen)
     (call $renderDungeon)
     (call $sysRenderEntity)
     (call $renderUI)
