@@ -9,11 +9,12 @@
   (global $maxX (export "maxX") (mut i32) (i32.const 0))
   (global $maxY (export "maxY") (mut i32) (i32.const 0))
 
-  [[reserve chars 100*100 chars]]
-  [[reserve fg 100*100*4 fg]]
-  [[reserve bg 100*100*4 bg]]
+  (memory (export "memory") 1)
+  (global $chars (export "chars") (mut i32) (i32.const 0))
+  (global $fg (export "fg") (mut i32) (i32.const 0))
+  (global $bg (export "bg") (mut i32) (i32.const 0))
   ;; TODO remove the need for this???
-  [[reserve layer 100*100]]
+  (global $layer (mut i32) (i32.const 0))
 
   (func $memset (param $addr i32) (param $ch i32) (param $size i32)
     (loop $set
@@ -27,17 +28,36 @@
   )
 
   (func $resize (export "resize") (param $w i32) (param $h i32)
-    ;; TODO check $w * $h < sizeof_chars
+    (local $needed i32)
+    (local $pages i32)
+
     (global.set $width (local.get $w))
     (global.set $height (local.get $h))
     (global.set $size (i32.mul (local.get $w) (local.get $h)))
     (global.set $colourSize (i32.mul (global.get $size) (i32.const 4)))
-    (global.set $totalSize (i32.mul (global.get $size) (i32.const 9)))
+    (global.set $totalSize (i32.mul (global.get $size) (i32.const 10)))
+
+    ;; expand memory to fit
+    (if (i32.gt_s (local.tee $needed (i32.sub (global.get $totalSize) (i32.mul (memory.size) (i32.const 0x10000)))) (i32.const 0)) (then
+      (local.set $pages (i32.div_u (local.get $needed) (i32.const 0x10000)))
+      (if (i32.rem_u (local.get $needed) (i32.const 0x10000))
+        (local.set $pages (i32.add (local.get $pages) (i32.const 1)))
+      )
+      (if (i32.lt_s (memory.grow (local.get $pages)) (i32.const 0))
+        ;; TODO ran out of memory
+        (unreachable)
+      )
+    ))
+
+    ;; allocate buffers
+    (global.set $chars          (i32.const 0))
+    (global.set $fg             (global.get $size))
+    (global.set $bg    (i32.add (global.get $fg) (global.get $colourSize)))
+    (global.set $layer (i32.add (global.get $bg) (global.get $colourSize)))
   )
 
   (func $clear (export "clear")
     (call $memset (global.get $chars) (i32.const 0) (global.get $totalSize))
-    (call $memset (global.get $layer) (i32.const 0) (global.get $size))
   )
 
   (func $centreOn (export "centreOn") (param $x i32) (param $y i32)
@@ -156,6 +176,4 @@
       )
     )
   )
-
-  [[memory memory]]
 )
