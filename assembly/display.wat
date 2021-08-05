@@ -9,6 +9,16 @@
   (global $maxX (export "maxX") (mut i32) (i32.const 0))
   (global $maxY (export "maxY") (mut i32) (i32.const 0))
 
+  (global $boxTL i32 (i32.const 218))
+  (global $boxT  i32 (i32.const 196))
+  (global $boxTR i32 (i32.const 191))
+  (global $boxR  i32 (i32.const 179))
+  (global $boxBR i32 (i32.const 217))
+  (global $boxB  i32 (i32.const 196))
+  (global $boxBL i32 (i32.const 192))
+  (global $boxL  i32 (i32.const 179))
+  (global $boxM  i32 (i32.const 32))
+
   (memory (export "memory") 1)
   (global $chars (export "chars") (mut i32) (i32.const 0))
   (global $fg (export "fg") (mut i32) (i32.const 0))
@@ -116,6 +126,72 @@
         (i32.ge_s (local.get $y) (global.get $minY))
         (i32.lt_s (local.get $y) (global.get $maxY))
       )
+    )
+  )
+
+  (func $drawBox (export "drawBox") (param $sx i32) (param $sy i32) (param $w i32) (param $h i32) (param $fg i32) (param $bg i32)
+    (local $ex i32)
+    (local $ey i32)
+    (local $x i32)
+    (local $y i32)
+    (local $ch i32)
+
+    (local.set $ex (i32.sub (i32.add (local.get $sx) (local.get $w)) (i32.const 1)))
+    (local.set $ey (i32.sub (i32.add (local.get $sy) (local.get $h)) (i32.const 1)))
+
+    (local.set $y (local.get $sy))
+    (loop $rows
+      (local.set $x (local.get $sx))
+      (loop $cols
+        (if (i32.eq (local.get $x) (local.get $sx)) (then
+          (if (i32.eq (local.get $y) (local.get $sy)) (then
+            (local.set $ch (global.get $boxTL))
+          ) (else
+            (if (i32.eq (local.get $y) (local.get $ey))
+              (local.set $ch (global.get $boxBL))
+              (local.set $ch (global.get $boxL))
+            )
+          ))
+        ) (else
+          (if (i32.eq (local.get $x) (local.get $ex)) (then
+            (if (i32.eq (local.get $y) (local.get $sy)) (then
+              (local.set $ch (global.get $boxTR))
+            ) (else
+              (if (i32.eq (local.get $y) (local.get $ey))
+                (local.set $ch (global.get $boxBR))
+                (local.set $ch (global.get $boxR))
+              )
+            ))
+          ) (else
+            (if (i32.eq (local.get $y) (local.get $sy)) (then
+              (local.set $ch (global.get $boxT))
+            ) (else
+              (if (i32.eq (local.get $y) (local.get $ey))
+                (local.set $ch (global.get $boxB))
+                (local.set $ch (global.get $boxM))
+              )
+            ))
+          ))
+        ))
+
+        (call $drawFgBg
+          (local.get $x)
+          (local.get $y)
+          (local.get $ch)
+          (local.get $fg)
+          (local.get $bg)
+        )
+
+        (br_if $cols (i32.le_u
+          (local.tee $x (i32.add (local.get $x) (i32.const 1)))
+          (local.get $ex)
+        ))
+      )
+
+      (br_if $rows (i32.le_u
+        (local.tee $y (i32.add (local.get $y) (i32.const 1)))
+        (local.get $ey)
+      ))
     )
   )
 
