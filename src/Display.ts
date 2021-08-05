@@ -1,8 +1,12 @@
-import { Keys, Mouse, Terminal } from "wglt";
+import { Keys, Terminal } from "wglt";
 
 import { WasmInterface } from "./interface";
+import { range } from "./utils";
 
 const keys = [
+  // grab all letters (inventory, etc.)
+  ...range(Keys.VK_Z + 1, Keys.VK_A),
+
   // Arrows
   Keys.VK_LEFT,
   Keys.VK_UP,
@@ -18,10 +22,10 @@ const keys = [
   Keys.VK_NUMPAD5,
 
   // VI keys
-  Keys.VK_H,
-  Keys.VK_K,
-  Keys.VK_L,
-  Keys.VK_J,
+  // Keys.VK_H,
+  // Keys.VK_K,
+  // Keys.VK_L,
+  // Keys.VK_J,
   Keys.VK_PERIOD,
 
   // other stuff
@@ -30,8 +34,7 @@ const keys = [
   Keys.VK_PAGE_DOWN,
   Keys.VK_END,
   Keys.VK_HOME,
-  Keys.VK_G,
-  Keys.VK_V,
+  Keys.VK_F5,
 ];
 
 export default class Display {
@@ -62,8 +65,7 @@ export default class Display {
     let dirty = false;
     let k = 0;
 
-    for (let i = 0; i < keys.length; i++) {
-      const vk = keys[i];
+    for (const vk of keys) {
       if (this.term.isKeyPressed(vk)) {
         k = vk;
         break;
@@ -83,13 +85,13 @@ export default class Display {
 
   refresh() {
     const { term } = this;
-    const { display, displayFg, displayBg } = this.i;
+    const { displayChars, displayFg, displayBg } = this.i;
 
     let i = 0,
       j = 0;
     for (let y = 0; y < this.h; y++) {
       for (let x = 0; x < this.w; x++) {
-        const ch = display.getUint8(i);
+        const ch = displayChars.getUint8(i);
         const fg = displayFg.getUint32(j, true);
         const bg = displayBg.getUint32(j, true);
 

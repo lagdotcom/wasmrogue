@@ -130,7 +130,6 @@ class Preprocessor {
   ptr!: number;
   structures!: Record<string, Structure>;
   stringData!: string;
-  stringOffsets!: Record<string, number>;
 
   constructor(public verbose: boolean = false) {
     this.env = {};
@@ -173,7 +172,6 @@ class Preprocessor {
     this.local = [];
     this.ptr = 0;
     this.stringData = "";
-    this.stringOffsets = {};
     this.structures = {};
   }
 
@@ -608,13 +606,15 @@ class Preprocessor {
   }
 
   private addString(value: string) {
-    if (!(value in this.stringOffsets)) {
-      const offset = this.env.Strings + this.stringData.length;
+    const pattern = value + "\0";
+    let index = this.stringData.indexOf(pattern);
+
+    if (index < 0) {
+      index = this.stringData.length;
       this.stringData += value + "\0";
-      this.stringOffsets[value] = offset;
     }
 
-    return this.stringOffsets[value];
+    return index + this.env.Strings;
   }
 
   strings() {

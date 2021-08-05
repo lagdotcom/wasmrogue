@@ -1,6 +1,6 @@
 {
   "name": "wasmrogue",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "WASM rogue!",
   "main": "index.js",
   "scripts": {
@@ -14,15 +14,15 @@
   "author": "Lag.Com <lagdotcom@gmail.com>",
   "license": "ISC",
   "devDependencies": {
-    "@rollup/plugin-commonjs": "^19.0.2",
+    "@rollup/plugin-commonjs": "^20.0.0",
     "@rollup/plugin-node-resolve": "^13.0.4",
-    "@rollup/plugin-typescript": "^8.2.3",
+    "@rollup/plugin-typescript": "^8.2.5",
     "@rollup/plugin-url": "^6.1.0",
     "@types/jake": "^0.0.33",
     "@types/watch": "^1.0.2",
     "glob": "^7.1.7",
     "jake": "^10.8.2",
-    "rollup": "^2.55.0",
+    "rollup": "^2.55.1",
     "rollup-plugin-serve": "^1.1.0",
     "ts-node": "^10.1.0",
     "wat2wasm": "^3.0.0",

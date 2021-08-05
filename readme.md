@@ -63,35 +63,45 @@ The preprocessor's parsing mechanism is custom and weird. It shouldn't get in th
 
 ### Memory Layout
 
-My memory layout is dynamic because my preprocessor handles it. Here's what is in the current build:
+My memory layout is dynamic because my preprocessor handles it. Here's what is in the current build.
+
+#### Main Memory
+
+| Start | Size        | Description     |
+| ----- | ----------- | --------------- |
+| 0     | 19\*2       | Tile types      |
+| 40    | 1..3        | Current action  |
+| 48    | 256\*8      | Entity data     |
+| 2096  | 256\*10     | Appearance data |
+| 4656  | 256\*1      | AI data         |
+| 4912  | 256\*16     | Fighter data    |
+| 9008  | 256\*2      | Position data   |
+| 9520  | 32\*4       | Room data       |
+| 9648  | 100\*100    | TileMap         |
+| 19648 | 100\*100    | VisibleMap      |
+| 29648 | 100\*100    | KnownMap        |
+| 39648 | 100\*100    | PathMap         |
+| 49648 | 1000        | Strings         |
+| 50648 | 100         | temp string     |
+| 50748 | 20          | temp (itoa)     |
+| 50768 | 100         | temp (hover)    |
+| 50868 | 100\*100\*2 | dijkstra queue  |
+| 70868 | 105\*100    | message log     |
+| 81368 | -           | -               |
+
+So, my data currently fits in two WebAssembly memory pages (64kB each).
+
+#### Display Memory
+
+TODO: make this allocate dynamically.
 
 | Start  | Size        | Description     |
 | ------ | ----------- | --------------- |
-| 0      | 19\*2       | Tile types      |
-| 40     | 1..3        | Current action  |
-| 48     | 256\*8      | Entity data     |
-| 2096   | 256\*10     | Appearance data |
-| 4656   | 256\*1      | AI data         |
-| 4912   | 256\*16     | Fighter data    |
-| 9008   | 256\*2      | Position data   |
-| 9520   | 32\*4       | Room data       |
-| 9648   | 100\*100    | TileMap         |
-| 19648  | 100\*100    | VisibleMap      |
-| 29648  | 100\*100    | KnownMap        |
-| 39648  | 100\*100    | PathMap         |
-| 49648  | 100\*100    | Display (chars) |
-| 59648  | 100\*100\*4 | Display (fg)    |
-| 99648  | 100\*100\*4 | Display (bg)    |
-| 139648 | 100\*100\   | Display (layer) |
-| 149648 | 1000        | Strings         |
-| 150648 | 100         | temp string     |
-| 150748 | 20          | temp (itoa)     |
-| 150768 | 100         | temp (hover)    |
-| 150868 | 100\*100\*2 | dijkstra queue  |
-| 170868 | 105\*100    | message log     |
-| 181368 | -           | -               |
-
-So, my data currently fits in three WebAssembly memory pages (64kB each).
+| 0      | 100\*100    | Display (chars) |
+| 10000  | 100\*100\*4 | Display (fg)    |
+| 50000  | 100\*100\*4 | Display (bg)    |
+| 90000  | 100\*100\   | Display (layer) |
+| 100000 | -           | -               |
 
 ## Log
 
