@@ -29,12 +29,14 @@ const keys = [
   Keys.VK_PERIOD,
 
   // other stuff
+  Keys.VK_ENTER,
   Keys.VK_ESCAPE,
   Keys.VK_PAGE_UP,
   Keys.VK_PAGE_DOWN,
   Keys.VK_END,
   Keys.VK_HOME,
   Keys.VK_F5,
+  Keys.VK_SLASH,
 ];
 
 export default class Display {
@@ -55,6 +57,7 @@ export default class Display {
     this.my = 0;
 
     container.append(this.e);
+    i.output = this;
     this.refresh();
 
     this.term.update = this.update.bind(this);
@@ -62,7 +65,6 @@ export default class Display {
   }
 
   update() {
-    let dirty = false;
     let k = 0;
 
     for (const vk of keys) {
@@ -72,15 +74,24 @@ export default class Display {
       }
     }
 
-    if (k && this.i.input(k)) dirty = true;
+    if (!k) {
+      if (this.term.mouse.buttons[0].down) k = Keys.VK_ENTER;
+      else if (this.term.mouse.buttons[2].down) k = Keys.VK_ESCAPE;
+    }
+
+    if (k) {
+      let mod = 0;
+      if (this.term.isKeyDown(Keys.VK_SHIFT)) mod |= 1;
+      if (this.term.isKeyDown(Keys.VK_CONTROL)) mod |= 2;
+      if (this.term.isKeyDown(Keys.VK_ALT)) mod |= 4;
+      this.i.input(k, mod);
+    }
+
     if (this.term.mouse.x !== this.mx || this.term.mouse.y !== this.my) {
       this.mx = this.term.mouse.x;
       this.my = this.term.mouse.y;
       this.i.hover(this.mx, this.my);
-      dirty = true;
     }
-
-    if (dirty) this.refresh();
   }
 
   refresh() {

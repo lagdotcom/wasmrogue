@@ -1,6 +1,7 @@
 import mainUrl from "../build/code.wasm";
 import displayUrl from "../build/display.wasm";
 import stdlibUrl from "../build/stdlib.wasm";
+import Display from "./Display";
 import { range, rng } from "./utils";
 
 interface DisplayModule {
@@ -25,6 +26,7 @@ interface DisplayModule {
   drawFgBg(x: number, y: number, ch: number, fg: number, bg: number): void;
   getLayer(x: number, y: number): number;
   resize(w: number, h: number): void;
+  setFgBg(x: number, y: number, fg: number, bg: number): void;
   setLayer(x: number, y: number, value: number): void;
 }
 
@@ -75,8 +77,8 @@ interface MainModule {
 
   initialise(w: number, h: number): void;
   hover(x: number, y: number): void;
-  input(code: number): boolean;
-  moveEntity(eid: number, mx: number, my: number): void;
+  input(code: number, mod: number): boolean;
+  moveEntity(eid: number, mx: number, my: number): boolean;
 }
 
 interface RLogMessage {
@@ -94,6 +96,8 @@ export interface RAppearance {
 
 export interface RAI {
   fn: number;
+  chain: number;
+  duration: number;
 }
 
 export interface RCarried {
@@ -103,6 +107,8 @@ export interface RCarried {
 export interface RConsumable {
   fn: number;
   power: number;
+  range: number;
+  radius: number;
 }
 
 export interface RFighter {
@@ -153,6 +159,7 @@ export class WasmInterface {
   entities: DataView;
   maxEntities: number;
   map: DataView;
+  output?: Display;
   raw: DataView;
   tileTypes: RTileType[];
 
@@ -262,12 +269,14 @@ export class WasmInterface {
   }
 
   ai(id: number): RAI {
-    const size = 1;
+    const size = 3;
     const offset = id * size + this.main.gAIs.value;
     const mem = this.mainMem(offset, size);
 
     return {
       fn: mem.getUint8(0),
+      chain: mem.getUint8(1),
+      duration: mem.getUint8(2),
     };
   }
 
@@ -282,13 +291,15 @@ export class WasmInterface {
   }
 
   consumable(id: number): RConsumable {
-    const size = 2;
+    const size = 4;
     const offset = id * size + this.main.gConsumables.value;
     const mem = this.mainMem(offset, size);
 
     return {
       fn: mem.getUint8(0),
       power: mem.getUint8(1),
+      range: mem.getUint8(2),
+      radius: mem.getUint8(3),
     };
   }
 
@@ -381,8 +392,12 @@ export class WasmInterface {
     };
   }
 
-  input(id: number): boolean {
-    return this.main.input(id);
+  refresh(): void {
+    if (this.output) this.output.refresh();
+  }
+
+  input(id: number, mod: number): boolean {
+    return this.main.input(id, mod);
   }
 
   hover(x: number, y: number): void {
@@ -405,13 +420,14 @@ async function getInterface() {
     const message = iface.string(offset);
     console.log(message);
   };
+  const refresh = () => iface?.refresh();
 
   const display = await getWASM(displayUrl);
   const stdlib = await getWASM(stdlibUrl);
   const main = await getWASM(mainUrl, {
     display,
     stdlib,
-    host: { debug, rng },
+    host: { debug, refresh, rng },
   });
   iface = new WasmInterface(
     display as unknown as DisplayModule,
