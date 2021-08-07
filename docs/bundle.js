@@ -33,12 +33,14 @@
         // Keys.VK_J,
         wglt.exports.Keys.VK_PERIOD,
         // other stuff
+        wglt.exports.Keys.VK_ENTER,
         wglt.exports.Keys.VK_ESCAPE,
         wglt.exports.Keys.VK_PAGE_UP,
         wglt.exports.Keys.VK_PAGE_DOWN,
         wglt.exports.Keys.VK_END,
         wglt.exports.Keys.VK_HOME,
         wglt.exports.Keys.VK_F5,
+        wglt.exports.Keys.VK_SLASH,
     ];
     class Display {
         i;
@@ -59,12 +61,12 @@
             this.mx = 0;
             this.my = 0;
             container.append(this.e);
+            i.output = this;
             this.refresh();
             this.term.update = this.update.bind(this);
             this.e.focus();
         }
         update() {
-            let dirty = false;
             let k = 0;
             for (const vk of keys) {
                 if (this.term.isKeyPressed(vk)) {
@@ -72,16 +74,27 @@
                     break;
                 }
             }
-            if (k && this.i.input(k))
-                dirty = true;
+            if (!k) {
+                if (this.term.mouse.buttons[0].down)
+                    k = wglt.exports.Keys.VK_ENTER;
+                else if (this.term.mouse.buttons[2].down)
+                    k = wglt.exports.Keys.VK_ESCAPE;
+            }
+            if (k) {
+                let mod = 0;
+                if (this.term.isKeyDown(wglt.exports.Keys.VK_SHIFT))
+                    mod |= 1;
+                if (this.term.isKeyDown(wglt.exports.Keys.VK_CONTROL))
+                    mod |= 2;
+                if (this.term.isKeyDown(wglt.exports.Keys.VK_ALT))
+                    mod |= 4;
+                this.i.input(k, mod);
+            }
             if (this.term.mouse.x !== this.mx || this.term.mouse.y !== this.my) {
                 this.mx = this.term.mouse.x;
                 this.my = this.term.mouse.y;
                 this.i.hover(this.mx, this.my);
-                dirty = true;
             }
-            if (dirty)
-                this.refresh();
         }
         refresh() {
             const { term } = this;
@@ -116,6 +129,7 @@
         entities;
         maxEntities;
         map;
+        output;
         raw;
         tileTypes;
         constructor(display, main) {
@@ -217,11 +231,13 @@
             };
         }
         ai(id) {
-            const size = 1;
+            const size = 3;
             const offset = id * size + this.main.gAIs.value;
             const mem = this.mainMem(offset, size);
             return {
                 fn: mem.getUint8(0),
+                chain: mem.getUint8(1),
+                duration: mem.getUint8(2),
             };
         }
         carried(id) {
@@ -233,12 +249,14 @@
             };
         }
         consumable(id) {
-            const size = 2;
+            const size = 4;
             const offset = id * size + this.main.gConsumables.value;
             const mem = this.mainMem(offset, size);
             return {
                 fn: mem.getUint8(0),
                 power: mem.getUint8(1),
+                range: mem.getUint8(2),
+                radius: mem.getUint8(3),
             };
         }
         fighter(id) {
@@ -306,8 +324,12 @@
                 Solid: this.main.Mask_Solid.value,
             };
         }
-        input(id) {
-            return this.main.input(id);
+        refresh() {
+            if (this.output)
+                this.output.refresh();
+        }
+        input(id, mod) {
+            return this.main.input(id, mod);
         }
         hover(x, y) {
             this.main.hover(x, y);
@@ -326,12 +348,13 @@
             const message = iface.string(offset);
             console.log(message);
         };
+        const refresh = () => iface?.refresh();
         const display = await getWASM(displayUrl);
         const stdlib = await getWASM(stdlibUrl);
         const main = await getWASM(mainUrl, {
             display,
             stdlib,
-            host: { debug, rng },
+            host: { debug, refresh, rng },
         });
         iface = new WasmInterface(display, main);
         return iface;
