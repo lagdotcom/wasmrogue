@@ -74,6 +74,11 @@ export default class Display {
       }
     }
 
+    if (!k) {
+      if (this.term.mouse.buttons[0].down) k = Keys.VK_ENTER;
+      else if (this.term.mouse.buttons[2].down) k = Keys.VK_ESCAPE;
+    }
+
     if (k) {
       let mod = 0;
       if (this.term.isKeyDown(Keys.VK_SHIFT)) mod |= 1;

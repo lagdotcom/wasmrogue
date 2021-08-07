@@ -28,8 +28,9 @@
   (global $chAt i32 [[= '@']])
 
   (global $cBlack i32 (i32.const 0x00000000))
-  (global $cWhite i32 (i32.const 0xffffff00))
   (global $cRed i32 (i32.const 0xff000000))
+  (global $cWhite i32 (i32.const 0xffffff00))
+  (global $cYellow i32 (i32.const 0xffff0000))
 
   (global $cBarEmpty i32 (i32.const 0x40101000))
   (global $cBarFilled i32 (i32.const 0x00600000))
@@ -132,7 +133,7 @@
   [[component Appearance ch:u8 layer:u8 colour:i32 name:i32]]
   [[component AI fn:u8 chain:u8 duration:u8]]
   [[component Carried carrier:u8]]
-  [[component Consumable fn:u8 power:u8 range:u8]]
+  [[component Consumable fn:u8 power:u8 range:u8 radius:u8]]
   [[component Fighter maxhp:i32 hp:i32 defence:i32 power:i32]]
   [[component Inventory size:u8]]
   [[component Position x:u8 y:u8]]
@@ -156,6 +157,7 @@
   (global $actionEntity (mut i32) (i32.const 0))
   (global $actionItem (mut i32) (i32.const 0))
   (global $actionMessage (mut i32) (i32.const 0))
+  (global $actionRadius (mut i32) (i32.const 0))
   (global $actionTargeted (mut i32) (i32.const 0))
 
   (global $resultID (mut i32) (i32.const 0))
@@ -801,7 +803,7 @@
     (global.set $resultTime (i32.const 1))
   )
 
-  (func $startTargeting (param $callback i32)
+  (func $startTargeting (param $callback i32) (param $radius i32)
     (local $pos i32)
 
     (local.set $pos (call $getPosition (global.get $playerID)))
@@ -811,6 +813,7 @@
     (call $saveMode)
     (call $setMode (global.get $gmTargeting) (global.get $rmTargeting))
     (global.set $actionCallback (local.get $callback))
+    (global.set $actionRadius (local.get $radius))
   )
 
   (func $addBlockedMsg (param $eid i32)
@@ -907,15 +910,16 @@
     $applyInventoryRender
     $applyTargetingRender
 
+    $applyConfusionItem
+    $applyFireballItem
     $applyHealingItem
     $applyLightningItem
-    $applyConfusionItem
   ))
   [[consts act 0 None Bump Confirm Drop Dungeon Generate History Inventory Look Melee Move Pickup Use Wait]]
   [[consts ai _Next None Hostile Confused]]
   [[consts gm _Next Dungeon Dead History Inventory Targeting]]
   [[consts rm _Next Dungeon History Inventory Targeting]]
-  [[consts it _Next Healing Lightning Confusion]]
+  [[consts it _Next Confusion Fireball Healing Lightning]]
 
   (func $applyNoAction)
   (func $applyWaitAction
@@ -1022,7 +1026,7 @@
   )
 
   (func $applyLookAction
-    (call $startTargeting (global.get $actDungeon))
+    (call $startTargeting (global.get $actDungeon) (i32.const 0))
   )
 
   (func $applyAction
@@ -1309,18 +1313,18 @@
     (i32.const -1)
   )
 
-  (func $getDistance (param $x1 i32) (param $y1 i32) (param $x2 i32) (param $y2 i32) (result i32)
+  (func $getDistance (param $x1 i32) (param $y1 i32) (param $x2 i32) (param $y2 i32) (result f32)
     (local $dx i32)
     (local $dy i32)
 
     (local.set $dx (i32.sub (local.get $x1) (local.get $x2)))
     (local.set $dy (i32.sub (local.get $y1) (local.get $y2)))
-    (return (i32.trunc_f32_s (f32.sqrt (f32.convert_i32_s
+    (return (f32.sqrt (f32.convert_i32_s
       (i32.add
         (i32.mul (local.get $dx) (local.get $dx))
         (i32.mul (local.get $dy) (local.get $dy))
       )
-    ))))
+    )))
   )
 
   (func $getNearestEnemy (param $centre i32) (param $range i32) (result i32)
@@ -1329,15 +1333,15 @@
     (local $y i32)
     (local $eid i32)
     (local $distance i32)
-    (local $edistance i32)
+    (local $edistance f32)
     (local $closest i32)
-    (local $dclosest i32)
+    (local $dclosest f32)
 
     (local.set $pos (call $getPosition (local.get $centre)))
     (local.set $x [[load $pos Position.x]])
     (local.set $y [[load $pos Position.y]])
     (local.set $closest (i32.const -1))
-    (local.set $dclosest (i32.add (local.get $range) (i32.const 1)))
+    (local.set $dclosest (f32.add (f32.convert_i32_u (local.get $range)) (f32.const 1)))
     (local.set $eid (i32.const 0))
     (loop $entities
       (if (i32.and
@@ -1345,7 +1349,7 @@
         (call $hasFighter (local.get $eid))
       ) (then
         (local.set $pos (call $getPosition (local.get $eid)))
-        (if (i32.lt_u (local.tee $edistance (call $getDistance (local.get $x) (local.get $y) [[load $pos Position.x]] [[load $pos Position.y]])) (local.get $dclosest)) (then
+        (if (f32.lt (local.tee $edistance (call $getDistance (local.get $x) (local.get $y) [[load $pos Position.x]] [[load $pos Position.y]])) (local.get $dclosest)) (then
           (local.set $closest (local.get $eid))
           (local.set $dclosest (local.get $edistance))
         ))
@@ -1514,6 +1518,11 @@
       (return)
     ))
 
+    (if (i32.le_u (local.get $roll) (i32.const 80)) (then
+      (call $constructFireballScroll (local.get $eid))
+      (return)
+    ))
+
     (if (i32.le_u (local.get $roll) (i32.const 90)) (then
       (call $constructConfusionScroll (local.get $eid))
       (return)
@@ -1533,6 +1542,10 @@
   (func $constructConfusionScroll (param $eid i32)
     [[attach $eid Appearance ch='~' colour=cConfusionScroll layer=layerItem name=[[s "Confusion Scroll"]]]]
     [[attach $eid Consumable fn=$itConfusion power=10]]
+  )
+  (func $constructFireballScroll (param $eid i32)
+    [[attach $eid Appearance ch='~' colour=cRed layer=layerItem name=[[s "Fireball Scroll"]]]]
+    [[attach $eid Consumable fn=$itFireball power=12 radius=3]]
   )
 
   (func $constructPlayer (param $eid i32) (param $x i32) (param $y i32)
@@ -1913,14 +1926,53 @@
     )
   )
 
+  (func $drawTargetRadius (param $fg i32) (param $bg i32)
+    (local $x i32)
+    (local $y i32)
+    (local $sx i32)
+    (local $ex i32)
+    (local $ey i32)
+    (local $r f32)
+
+    (local.set $r (f32.convert_i32_u (global.get $actionRadius)))
+    (local.set $sx (i32.sub (global.get $targetX) (global.get $actionRadius)))
+    (local.set $y (i32.sub (global.get $targetY) (global.get $actionRadius)))
+    (local.set $ex (i32.add (local.get $sx) (i32.mul (global.get $actionRadius) (i32.const 2))))
+    (local.set $ey (i32.add (local.get $y) (i32.mul (global.get $actionRadius) (i32.const 2))))
+
+    (loop $rows
+      (local.set $x (local.get $sx))
+      (loop $cols
+        (if (f32.le (call $getDistance (global.get $targetX) (global.get $targetY) (local.get $x) (local.get $y)) (local.get $r))
+          (call $setFgBg
+            (i32.sub (local.get $x) (global.get $displayMinX))
+            (i32.sub (local.get $y) (global.get $displayMinY))
+            (local.get $fg)
+            (local.get $bg)
+          )
+        )
+
+        (br_if $cols (i32.le_s (local.tee $x (i32.add (local.get $x) (i32.const 1))) (local.get $ex)))
+      )
+
+      (br_if $rows (i32.le_s (local.tee $y (i32.add (local.get $y) (i32.const 1))) (local.get $ey)))
+    )
+  )
+
   (func $applyTargetingRender
     (call $applyDungeonRender)
 
-    (call $setFgBg
-      (i32.sub (global.get $targetX) (global.get $displayMinX))
-      (i32.sub (global.get $targetY) (global.get $displayMinY))
-      (global.get $cBlack)
-      (global.get $cWhite)
+    (if (i32.eqz (global.get $actionRadius))
+      (call $setFgBg
+        (i32.sub (global.get $targetX) (global.get $displayMinX))
+        (i32.sub (global.get $targetY) (global.get $displayMinY))
+        (global.get $cBlack)
+        (global.get $cWhite)
+      )
+      (call $drawTargetRadius
+        (global.get $cYellow)
+        (global.get $cRed)
+      )
     )
   )
 
@@ -2188,6 +2240,7 @@
     [[attach $eid Appearance ch='%' colour=cCorpse layer=layerCorpse name="corpse"]]
     (call $unsetSolid (local.get $eid))
     (call $detachAI (local.get $eid))
+    (call $detachFighter (local.get $eid)) ;; might cause problems...
   )
 
   (func $putsFg (param $s i32) (param $x i32) (param $y i32) (param $fg i32)
@@ -2403,7 +2456,7 @@
     (local $s i32)
 
     (if (i32.eqz (global.get $actionTargeted)) (then
-      (call $startTargeting (global.get $itConfusion))
+      (call $startTargeting (global.get $itConfusion) (i32.const 0))
       (call $addToLog [[s "Choose a target."]] (global.get $cNeedsTarget))
       (return)
     ))
@@ -2432,6 +2485,64 @@
     (local.set $s (call $strcpy (local.get $s) (call $getName (local.get $target))))
     (local.set $s (call $strcpy (local.get $s) [[s " looks confused!"]]))
     (call $addToLog (global.get $tempString) (global.get $cStatusEffectApplied))
+    (call $removeEntity (global.get $actionItem))
+    (call $tick)
+  )
+
+  (func $applyFireballItem
+    (local $consumable i32)
+    (local $target i32)
+    (local $s i32)
+    (local $eid i32)
+    (local $pos i32)
+    (local $r f32)
+    (local $damage i32)
+    (local $hits i32)
+
+    (local.set $consumable (call $getConsumable (global.get $actionItem)))
+
+    (if (i32.eqz (global.get $actionTargeted)) (then
+      (call $startTargeting (global.get $itFireball) [[load $consumable Consumable.radius]])
+      (call $addToLog [[s "Choose a target."]] (global.get $cNeedsTarget))
+      (return)
+    ))
+
+    (if (i32.eqz (call $isVisible (global.get $actionX) (global.get $actionY))) (then
+      (call $impossible [[s "You can't see there."]])
+      (return)
+    ))
+
+    (local.set $r (f32.convert_i32_u [[load $consumable Consumable.radius]]))
+    (local.set $damage [[load $consumable Consumable.power]])
+
+    (loop $entities
+      (if (i32.and
+        (call $hasFighter (local.get $eid))
+        (call $hasPosition (local.get $eid))
+      ) (then
+        (local.set $pos (call $getPosition (local.get $eid)))
+        (if (f32.le (call $getDistance (global.get $actionX) (global.get $actionY) [[load $pos Position.x]] [[load $pos Position.y]]) (local.get $r)) (then
+          (local.set $s (call $strcpy (global.get $tempString) [[s "Fire burns "]]))
+          (local.set $s (call $strcpy (local.get $s) (call $getName (local.get $eid))))
+          (local.set $s (call $strcpy (local.get $s) [[s " for "]]))
+          (local.set $s (call $strcpy (local.get $s) (call $itoa (local.get $damage))))
+          (local.set $s (call $strcpy (local.get $s) [[s " hit points."]]))
+          (call $takeDamage (local.get $eid) (local.get $damage))
+          (call $addToLog (global.get $tempString) (global.get $cWhite))
+
+          (call $checkKill (local.get $eid))
+          (local.set $hits (i32.add (local.get $hits) (i32.const 1)))
+        ))
+      ))
+
+      (br_if $entities (i32.lt_u (local.tee $eid (i32.add (local.get $eid) (i32.const 1))) (global.get $nextEntity)))
+    )
+
+    (if (i32.eqz (local.get $hits)) (then
+      (call $impossible [[s "No targets in area."]])
+      (return)
+    ))
+
     (call $removeEntity (global.get $actionItem))
     (call $tick)
   )

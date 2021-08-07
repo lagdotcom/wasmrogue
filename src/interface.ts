@@ -108,6 +108,7 @@ export interface RConsumable {
   fn: number;
   power: number;
   range: number;
+  radius: number;
 }
 
 export interface RFighter {
@@ -290,7 +291,7 @@ export class WasmInterface {
   }
 
   consumable(id: number): RConsumable {
-    const size = 3;
+    const size = 4;
     const offset = id * size + this.main.gConsumables.value;
     const mem = this.mainMem(offset, size);
 
@@ -298,6 +299,7 @@ export class WasmInterface {
       fn: mem.getUint8(0),
       power: mem.getUint8(1),
       range: mem.getUint8(2),
+      radius: mem.getUint8(3),
     };
   }
 
