@@ -107,6 +107,13 @@ function ppSplit(code: string): string[] {
   return parts;
 }
 
+function oneSplit(code: string, sep: string): [string, string] {
+  const i = code.indexOf(sep);
+  if (i < 0) throw new Error(`No ${sep} in ${code}.`);
+
+  return [code.substr(0, i), code.substr(i + 1)];
+}
+
 type Processor = (...args: string[]) => string | void;
 interface StructureField {
   name: string;
@@ -348,7 +355,7 @@ class Preprocessor {
   struct(name: string, ...fields: string[]) {
     const s: Structure = { name, size: 0, fields: {} };
     fields.forEach((f) => {
-      const [name, type] = f.split(":");
+      const [name, type] = oneSplit(f, ":");
       const size = getTypeSize(type);
 
       s.fields[name] = { name, type, offset: s.size, size };
@@ -360,7 +367,7 @@ class Preprocessor {
   }
 
   store(sstart: string, path: string, ...code: string[]) {
-    const [sname, fname] = path.split(".");
+    const [sname, fname] = oneSplit(path, ".");
     const s = this.structures[sname];
     if (!s) throw this.error(`Unknown structure: ${sname}`);
     const f = s.fields[fname];
@@ -376,7 +383,7 @@ class Preprocessor {
   }
 
   load(sstart: string, path: string) {
-    const [sname, fname] = path.split(".");
+    const [sname, fname] = oneSplit(path, ".");
     const s = this.structures[sname];
     if (!s) throw this.error(`Unknown structure: ${sname}`);
     const f = s.fields[fname];
@@ -419,7 +426,7 @@ class Preprocessor {
       fieldNames.map((name) => [name, 0])
     );
     fields.forEach((fstring) => {
-      const [fname, fvalue] = fstring.split("=");
+      const [fname, fvalue] = oneSplit(fstring, "=");
       const f = s.fields[fname];
       if (!f) throw this.error(`Unknown structure field: ${name}.${fname}`);
 
@@ -630,7 +637,7 @@ class Preprocessor {
       fieldNames.map((name) => [name, "(i32.const 0)"])
     );
     fields.forEach((fstring) => {
-      const [fname, fvalue] = fstring.split("=");
+      const [fname, fvalue] = oneSplit(fstring, "=");
       const f = s.fields[fname];
       if (!f) throw this.error(`Unknown structure field: ${name}.${fname}`);
 

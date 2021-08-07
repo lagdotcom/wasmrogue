@@ -108,6 +108,17 @@
     )
   )
 
+  (func $setFgBg (export "setFgBg") (param $x i32) (param $y i32) (param $fg i32) (param $bg i32)
+    (i32.store
+      (call $getFGXY (local.get $x) (local.get $y))
+      (local.get $fg)
+    )
+    (i32.store
+      (call $getBGXY (local.get $x) (local.get $y))
+      (local.get $bg)
+    )
+  )
+
   (func $getLayer (export "getLayer") (param $x i32) (param $y i32) (result i32)
     (i32.load8_s (call $getLayerXY (local.get $x) (local.get $y)))
   )
