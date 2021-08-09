@@ -1,5 +1,6 @@
 import Display from "./Display";
 import getInterface from "./interface";
+import Persistence from "./Persistence";
 
 getInterface().then((i) => {
   const container = document.getElementById("container") || document.body;
@@ -9,4 +10,6 @@ getInterface().then((i) => {
 
   const d = new Display(i, container);
   (window as any).d = d;
+
+  const p = new Persistence(i);
 });

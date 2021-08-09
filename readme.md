@@ -67,43 +67,46 @@ My memory layout is dynamic because my preprocessor handles it. Here's what is i
 
 #### Main Memory
 
-| Start | Size        | Description     |
-| ----- | ----------- | --------------- |
-| 0     | 19\*2       | Tile types      |
-| 40    | 1..3        | Current action  |
-| 48    | 256\*8      | Entity data     |
-| 2096  | 256\*10     | Appearance data |
-| 4656  | 256\*1      | AI data         |
-| 4912  | 256\*16     | Fighter data    |
-| 9008  | 256\*2      | Position data   |
-| 9520  | 32\*4       | Room data       |
-| 9648  | 100\*100    | TileMap         |
-| 19648 | 100\*100    | VisibleMap      |
-| 29648 | 100\*100    | KnownMap        |
-| 39648 | 100\*100    | PathMap         |
-| 49648 | 1000        | Strings         |
-| 50648 | 100         | temp string     |
-| 50748 | 20          | temp (itoa)     |
-| 50768 | 100         | temp (hover)    |
-| 50868 | 100\*100\*2 | dijkstra queue  |
-| 70868 | 105\*100    | message log     |
-| 81368 | -           | -               |
+| Start | Size        | Description      |
+| ----- | ----------- | ---------------- |
+| 0     | 16          | (savefile start) |
+| 16    | 256\*8      | Entity data      |
+| 2064  | 256\*10     | Appearance data  |
+| 4624  | 256\*3      | AI data          |
+| 5392  | 256\*1      | Carried data     |
+| 5648  | 256\*4      | Consumable data  |
+| 6672  | 256\*16     | Fighter data     |
+| 10768 | 256\*1      | Inventory data   |
+| 11024 | 256\*2      | Position data    |
+| 11536 | 32\*4       | Room data        |
+| 11664 | 100\*100    | TileMap          |
+| 21664 | 100\*100    | VisibleMap       |
+| 31664 | 100\*100    | KnownMap         |
+| 41664 | 100\*100    | PathMap          |
+| 51664 | 105\*100    | message log      |
+| 62164 | -           | (savefile end)   |
+| 62164 | 1000        | Strings          |
+| 66164 | 100         | temp string      |
+| 66264 | 20          | temp (itoa)      |
+| 66284 | 100         | temp (hover)     |
+| 66384 | 100\*100\*2 | dijkstra queue   |
+| 86384 | 19\*2       | Tile types       |
+| 86424 | -           | -                |
 
 So, my data currently fits in two WebAssembly memory pages (64kB each).
 
-#### Display Memory
-
-TODO: make this allocate dynamically.
-
-| Start  | Size        | Description     |
-| ------ | ----------- | --------------- |
-| 0      | 100\*100    | Display (chars) |
-| 10000  | 100\*100\*4 | Display (fg)    |
-| 50000  | 100\*100\*4 | Display (bg)    |
-| 90000  | 100\*100\   | Display (layer) |
-| 100000 | -           | -               |
-
 ## Log
+
+### 2021-08-09
+
+I forgot to write logs until now. All the way up to part 10 done! Whole bunch of refactors:
+
+- display code moved to its own file and manages its own memory
+- removed Action/Result structs, they weren't doing anything useful
+- WASM requests a refresh from the frontend when needed now
+- fixed some bugs in the preprocessor and made it a bit smarter
+- refactored interface code a tiny bit
+- added a favicon :D
 
 ### 2021-07-31
 

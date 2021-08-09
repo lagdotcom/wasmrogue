@@ -9,6 +9,7 @@
   (import "display" "setLayer" (func $setDisplayLayer (param $x i32) (param $y i32) (param i32)))
   (import "display" "contains" (func $isOnScreen (param $x i32) (param $y i32) (result i32)))
   (import "display" "drawBox" (func $drawBox (param $sx i32) (param $sy i32) (param $w i32) (param $h i32) (param $fg i32) (param $bg i32)))
+  (import "display" "fadeOut" (func $fadeOut (param $div i32)))
   (import "display" "width" (global $displayWidth (mut i32)))
   (import "display" "height" (global $displayHeight (mut i32)))
   (import "display" "minX" (global $displayMinX (mut i32)))
@@ -21,7 +22,9 @@
   (import "stdlib" "min" (func $min (param i32) (param i32) (result i32)))
 
   (import "host" "debug" (func $debug (param $s i32)))
+  (import "host" "load" (func $load))
   (import "host" "refresh" (func $refresh))
+  (import "host" "save" (func $save (param $addr i32) (param $size i32)))
   ;; TODO make my own rng!
   (import "host" "rng" (func $rng (param $min i32) (param $max i32) (result i32)))
 
@@ -34,7 +37,7 @@
 
   (global $cBarEmpty i32 (i32.const 0x40101000))
   (global $cBarFilled i32 (i32.const 0x00600000))
-  (global $cBarText i32 (i32.const 0xffffff00))
+  (global $cBarText i32 [[= cWhite]])
   (global $cConfusionScroll i32 (i32.const 0xcf3fff00))
   (global $cCorpse i32 (i32.const 0xbf000000))
   (global $cEnemyAtk i32 (i32.const 0xffc0c000))
@@ -45,8 +48,10 @@
   (global $cHealingPotion i32 (i32.const 0x7f00ff00))
   (global $cHealthRecovered i32 (i32.const 0x00ff0000))
   (global $cImpossible i32 (i32.const 0x80808000))
-  (global $cInvalid i32 (i32.const 0xffff0000))
-  (global $cLightningScroll i32 (i32.const 0xffff0000))
+  (global $cInvalid i32 [[= cYellow]])
+  (global $cLightningScroll i32 [[= cYellow]])
+  (global $cMenuText i32 [[= cWhite]])
+  (global $cMenuTitle i32 (i32.const 0xffff3f00))
   (global $cNeedsTarget i32 (i32.const 0x3fffff00))
   (global $cOrc i32 (i32.const 0x3f7f3f00))
   (global $cPlayerAtk i32 (i32.const 0xe0e0e000))
@@ -84,6 +89,7 @@
   (global $kSpace i32 [[= ' ']])
   (global $kDrop i32 [[= 'D']])
   (global $kGet i32 [[= 'G']])
+  (global $kSave i32 [[= 'S']])
   (global $kUse i32 [[= 'U']])
   (global $kHistory i32 [[= 'V']])
   (global $kGenerate i32 (i32.const 116)) ;; F5
@@ -92,6 +98,9 @@
   (global $kA i32 [[= 'A']])
   (global $kZ i32 [[= 'Z']])
 
+  (global $kContinue i32 [[= 'C']])
+  (global $kNewGame i32 [[= 'N']])
+
   (global $kmShift i32 (i32.const 1))
   (global $kmCtrl i32 (i32.const 2))
   (global $kmAlt i32 (i32.const 4))
@@ -99,7 +108,7 @@
   (global $inputChar (mut i32) (i32.const 0))
   (global $inputMod (mut i32) (i32.const 0))
   (global $gameMode (export "gGameMode") (mut i32) (i32.const 0))
-  (global $renderMode (mut i32) (i32.const 0))
+  (global $renderMode (export "gRenderMode") (mut i32) (i32.const 0))
   (global $previousGameMode (mut i32) (i32.const 0))
   (global $previousRenderMode (mut i32) (i32.const 0))
 
@@ -107,27 +116,22 @@
   (global $playerID (export "gPlayerID") (mut i32) (i32.const 0))
   (global $visionRange i32 (i32.const 8))
   (global $inventorySize i32 (i32.const 10))
+  (global $displayEdge i32 (i32.const 8))
+  ;; TODO am I going to regret this
+  (global $maxStringSize i32 (i32.const 100))
 
   (global $targetX (mut i32) (i32.const 0))
   (global $targetY (mut i32) (i32.const 0))
 
   [[struct Tile walkable:u8 transparent:u8 ch:u8 fg:i32 bg:i32 fglight:i32 bglight:i32]]
-  [[reserve TileTypes sizeof_Tile*2 gTileTypes]]
-  [[align 8]]
-  (data $tileTypeData (offset [[= TileTypes]])
-    [[data Tile walkable=1 transparent=1 ch='.' fg=cWhite bg=cFloorDark fglight=cWhite bglight=cFloorLight]]
-    [[data Tile ch='#' fg=cWhite bg=cWallDark fglight=cWhite bglight=cWallBright]]
-  )
-  [[consts tt 0 Floor Wall]]
-  (global $ttINVALID (export "gTileTypeCount") i32 [[= _Next]])
-  (global $tileTypeSize (export "gTileTypeSize") i32 [[= sizeof_Tile]])
 
   [[struct Entity mask:i64]]
   (global $maxEntities (export "gMaxEntities") i32 (i32.const 256))
   (global $entitySize (export "gEntitySize") i32 [[= sizeof_Entity]])
-  (global $nextEntity (mut i32) (i32.const 1))
+  (global $nextEntity (export "gNextEntity") (mut i32) (i32.const 1))
   (global $currentEntity (mut i32) (i32.const -1))
 
+  [[consts align 0 Left Centre]]
   [[consts layer 0 Empty Corpse Item Actor]]
 
   [[component Appearance ch:u8 layer:u8 colour:i32 name:i32]]
@@ -167,6 +171,10 @@
   [[consts dir 0 Up Right Down Left]]
   [[consts res 0 OK Impossible]]
 
+  [[struct SaveHeader gm:u8 rm:u8 ecount:u8]]
+  [[reserve Header sizeof_SaveHeader]]
+  [[align 16]]
+
   [[reserve Entities maxEntities*sizeof_Entity gEntities]]
   [[reserve Appearances maxEntities*sizeof_Appearance gAppearances]]
   [[reserve AIs maxEntities*sizeof_AI gAIs]]
@@ -185,10 +193,20 @@
   [[reserve ExploredMap mapSize]]
   [[reserve PathMap mapSize]]
 
-  (global $displayEdge i32 (i32.const 8))
+  [[struct LogMsg fg:i32 count:u8]]
+  (global $logMsgSize (export "gMessageSize") i32 [[= sizeof_LogMsg+maxStringSize]])
 
-  ;; TODO am I going to regret this
-  (global $maxStringSize i32 (i32.const 100))
+  (global $logCount (export "gMessageCount") i32 (i32.const 100))
+  (global $minLogCount i32 [[= -logCount]])
+  (global $showLogCount i32 (i32.const 5))
+  [[reserve messageLog logMsgSize*logCount gMessageLog]]
+  (global $messageChunkSize i32 [[= logMsgSize*(logCount-1)]])
+  (global $secondMessage i32 [[= messageLog+logMsgSize]])
+  (global $lastMessage i32 [[= messageLog+sizeof_messageLog-logMsgSize]])
+
+  ;; this marks the end of data that should be saved
+  [[reserve savefileSize 0]]
+
   ;; TODO make sizeof_Strings dynamic
   [[reserve Strings 4000 gStrings]]
   (global $stringsSize (export "gStringsSize") i32 [[= sizeof_Strings]])
@@ -330,7 +348,13 @@
 
   (func $initialise (export "initialise") (param $w i32) (param $h i32)
     (call $resize (local.get $w) (local.get $h))
+    (call $setMode (global.get $gmMainMenu) (global.get $rmMainMenu))
+    (call $render)
+  )
+
+  (func $newGame
     (call $generateMap)
+    (call $clearLog)
     (call $addToLog [[s "Welcome to WASMrogue!"]] (global.get $cWelcomeText))
     (call $render)
   )
@@ -802,6 +826,11 @@
   (func $tick
     (global.set $resultTime (i32.const 1))
   )
+  (func $popup (param $message i32)
+    (call $saveMode)
+    (call $setMode (global.get $gmPopup) (global.get $rmPopup))
+    (global.set $resultMessage (local.get $message))
+  )
 
   (func $startTargeting (param $callback i32) (param $radius i32)
     (local $pos i32)
@@ -899,15 +928,19 @@
     $applyHostileAI
     $applyConfusedAI
 
+    $applyMainMenuInput
     $applyDungeonInput
     $applyDeadInput
     $applyHistoryInput
     $applyInventoryInput
+    $applyPopupInput
     $applyTargetingInput
 
+    $applyMainMenuRender
     $applyDungeonRender
     $applyHistoryRender
     $applyInventoryRender
+    $applyPopupRender
     $applyTargetingRender
 
     $applyConfusionItem
@@ -917,8 +950,8 @@
   ))
   [[consts act 0 None Bump Confirm Drop Dungeon Generate History Inventory Look Melee Move Pickup Use Wait]]
   [[consts ai _Next None Hostile Confused]]
-  [[consts gm _Next Dungeon Dead History Inventory Targeting]]
-  [[consts rm _Next Dungeon History Inventory Targeting]]
+  [[consts gm _Next MainMenu Dungeon Dead History Inventory Popup Targeting]]
+  [[consts rm _Next MainMenu Dungeon History Inventory Popup Targeting]]
   [[consts it _Next Confusion Fireball Healing Lightning]]
 
   (func $applyNoAction)
@@ -1144,6 +1177,14 @@
       (global.set $actionID (global.get $actLook))
       (return)
     ))
+
+    (if (i32.eq (local.get $ch) (global.get $kSave)) (then
+      (call $prepareSave)
+      (call $save (i32.const 0) (global.get $savefileSize))
+      (call $addToLog [[s "Game saved."]] (global.get $cWhite))
+      (call $render)
+      (return)
+    ))
   )
 
   (func $applyDeadInput
@@ -1154,7 +1195,8 @@
       (i32.eq (local.get $ch) (global.get $kEscape))
       (i32.eq (local.get $ch) (global.get $kGenerate))
     ) (then
-      (global.set $actionID (global.get $actGenerate))
+      (call $setMode (global.get $gmMainMenu) (global.get $rmMainMenu))
+      (call $render)
       (return)
     ))
 
@@ -1281,6 +1323,27 @@
       (call $centreOnPlayer)
       (return)
     ))
+  )
+
+  (func $applyMainMenuInput
+    (local $ch i32)
+    (local.set $ch (global.get $inputChar))
+
+    (if (i32.eq (local.get $ch) (global.get $kNewGame)) (then
+      (call $newGame)
+      (return)
+    ))
+
+    (if (i32.eq (local.get $ch) (global.get $kContinue)) (then
+      (call $load)
+      ;; this will callback to loadSucceeded or loadFailed eventually
+      (return)
+    ))
+  )
+
+  (func $applyPopupInput
+    (call $restoreMode)
+    (call $render)
   )
 
   (func $getEntity (param $id i32) (result i32)
@@ -1858,7 +1921,7 @@
     )
   )
 
-  (func $render
+  (func $render (export "render")
     (call_indirect (global.get $renderMode))
     (call $refresh)
   )
@@ -1909,7 +1972,7 @@
     (local.set $x (i32.add (local.get $x) (i32.const 1)))
     (local.set $y (i32.add (local.get $y) (i32.const 1)))
 
-    (call $putsFgBg (global.get $actionMessage) (local.get $x) (local.get $y) (global.get $cWhite) (global.get $cBlack))
+    (call $putsFgBg (global.get $actionMessage) (local.get $x) (local.get $y) (global.get $cWhite) (global.get $cBlack) (global.get $alignLeft))
 
     (local.set $y (i32.add (local.get $y) (i32.const 1)))
     (loop $items
@@ -1917,7 +1980,7 @@
       (local.set $s (call $strcpy (local.get $s) (call $getName (call $getInventoryItem (global.get $playerID) (local.get $i)))))
       ;; overwrite first char with selection char
       (i32.store8 (global.get $tempString) (i32.add (local.get $i) [[= 'a']]))
-      (call $putsFg (global.get $tempString) (local.get $x) (local.tee $y (i32.add (local.get $y) (i32.const 1))) (global.get $cWhite))
+      (call $putsFg (global.get $tempString) (local.get $x) (local.tee $y (i32.add (local.get $y) (i32.const 1))) (global.get $cWhite) (global.get $alignLeft))
 
       (br_if $items (i32.lt_u
         (local.tee $i (i32.add (local.get $i) (i32.const 1)))
@@ -1973,6 +2036,36 @@
         (global.get $cYellow)
         (global.get $cRed)
       )
+    )
+  )
+
+  (func $applyMainMenuRender
+    (local $cx i32)
+    (local $cy i32)
+
+    (call $clearScreen)
+
+    (local.set $cx (i32.div_u (global.get $displayWidth) (i32.const 2)))
+    (local.set $cy (i32.div_u (global.get $displayHeight) (i32.const 2)))
+
+    (call $putsFg [[s "DUNGEON ASSEMBLY"]] (local.get $cx) (i32.sub (local.get $cy) (i32.const 4)) (global.get $cMenuTitle) (global.get $alignCentre))
+    (call $putsFg [[s "by Lag.Com"]] (local.get $cx) (i32.sub (global.get $displayHeight) (i32.const 2)) (global.get $cMenuTitle) (global.get $alignCentre))
+
+    (call $putsFg [[s "n) new game"]] (local.get $cx) (i32.sub (local.get $cy) (i32.const 2)) (global.get $cMenuText) (global.get $alignCentre))
+    (call $putsFg [[s "c) continue"]] (local.get $cx) (i32.sub (local.get $cy) (i32.const 1)) (global.get $cMenuText) (global.get $alignCentre))
+  )
+
+  (func $applyPopupRender
+    (call_indirect $fnLookup (global.get $previousRenderMode))
+    (call $fadeOut (i32.const 8))
+
+    (call $putsFgBg
+      (global.get $resultMessage)
+      (i32.div_u (global.get $displayWidth) (i32.const 2))
+      (i32.div_u (global.get $displayHeight) (i32.const 2))
+      (global.get $cWhite)
+      (global.get $cBlack)
+      (global.get $alignCentre)
     )
   )
 
@@ -2189,16 +2282,9 @@
     [[s "something"]]
   )
 
-  [[struct LogMsg fg:i32 count:u8]]
-  (global $logMsgSize (export "gMessageSize") i32 [[= sizeof_LogMsg+maxStringSize]])
-
-  (global $logCount (export "gMessageCount") i32 (i32.const 100))
-  (global $minLogCount i32 [[= -logCount]])
-  (global $showLogCount i32 (i32.const 5))
-  [[reserve messageLog logMsgSize*logCount gMessageLog]]
-  (global $messageChunkSize i32 [[= logMsgSize*(logCount-1)]])
-  (global $secondMessage i32 [[= messageLog+logMsgSize]])
-  (global $lastMessage i32 [[= messageLog+sizeof_messageLog-logMsgSize]])
+  (func $clearLog
+    (call $memset [[= messageLog]] (i32.const 0) [[= sizeof_messageLog]])
+  )
 
   (func $addToLog (param $s i32) (param $fg i32)
     (local $o i32)
@@ -2243,9 +2329,18 @@
     (call $detachFighter (local.get $eid)) ;; might cause problems...
   )
 
-  (func $putsFg (param $s i32) (param $x i32) (param $y i32) (param $fg i32)
+  (func $applyAlignment (param $s i32) (param $x i32) (param $align i32) (result i32)
+    (if (i32.eq (local.get $align) (global.get $alignCentre))
+      (return (i32.sub (local.get $x) (i32.div_u (call $strlen (local.get $s)) (i32.const 2))))
+    )
+
+    (local.get $x)
+  )
+
+  (func $putsFg (param $s i32) (param $x i32) (param $y i32) (param $fg i32) (param $align i32)
     (local $ch i32)
 
+    (local.set $x (call $applyAlignment (local.get $s) (local.get $x) (local.get $align)))
     (loop $str
       (local.set $ch (i32.load8_u (local.get $s)))
       (if (i32.eqz (local.get $ch)) (return))
@@ -2257,9 +2352,10 @@
       (br $str)
     )
   )
-  (func $putsFgBg (param $s i32) (param $x i32) (param $y i32) (param $fg i32) (param $bg i32)
+  (func $putsFgBg (param $s i32) (param $x i32) (param $y i32) (param $fg i32) (param $bg i32) (param $align i32)
     (local $ch i32)
 
+    (local.set $x (call $applyAlignment (local.get $s) (local.get $x) (local.get $align)))
     (loop $str
       (local.set $ch (i32.load8_u (local.get $s)))
       (if (i32.eqz (local.get $ch)) (return))
@@ -2314,7 +2410,7 @@
         ))
 
         ;; TODO word wrap
-        (call $putsFgBg (global.get $tempString) (local.get $x) (local.get $y) [[load $msg LogMsg.fg]] (global.get $cBlack))
+        (call $putsFgBg (global.get $tempString) (local.get $x) (local.get $y) [[load $msg LogMsg.fg]] (global.get $cBlack) (global.get $alignLeft))
         (local.set $y (i32.sub (local.get $y) (i32.const 1)))
       ) (return))
 
@@ -2339,7 +2435,7 @@
     (global.set $hoverStringPtr (global.get $hoverString))
 
     (call $sysHoverList)
-    (call $putsFgBg (global.get $hoverString) (i32.const 21) (i32.sub (global.get $displayHeight) (i32.const 6)) (global.get $cWhite) (global.get $cBlack))
+    (call $putsFgBg (global.get $hoverString) (i32.const 21) (i32.sub (global.get $displayHeight) (i32.const 6)) (global.get $cWhite) (global.get $cBlack) (global.get $alignLeft))
   )
 
   (func $renderStats
@@ -2370,7 +2466,7 @@
     (local.set $s (call $strcpy (local.get $s) (call $itoa (local.get $value))))
     (local.set $s (call $strcpy (local.get $s) [[s "/"]]))
     (local.set $s (call $strcpy (local.get $s) (call $itoa (local.get $max))))
-    (call $putsFg (global.get $tempString) (i32.const 1) (local.get $y) (global.get $cBarText))
+    (call $putsFg (global.get $tempString) (i32.const 1) (local.get $y) (global.get $cBarText) (global.get $alignLeft))
   )
 
   (func $takeDamage (param $eid i32) (param $amount i32)
@@ -2633,6 +2729,39 @@
     (global.set $actionTargeted (i32.const 1))
     (call_indirect (global.get $actionCallback))
   )
+
+  (func $prepareSave
+    [[store $Header SaveHeader.gm (global.get $gameMode)]]
+    [[store $Header SaveHeader.rm (global.get $renderMode)]]
+    [[store $Header SaveHeader.ecount (global.get $nextEntity)]]
+  )
+
+  (func $loadFailed (export "loadFailed")
+    (call $popup [[s "No saved game to load."]])
+    (call $render)
+  )
+
+  (func $loadSucceeded (export "loadSucceeded")
+    (global.set $gameMode [[load $Header SaveHeader.gm]])
+    (global.set $renderMode [[load $Header SaveHeader.rm]])
+    (global.set $nextEntity [[load $Header SaveHeader.ecount]])
+
+    (call $addToLog [[s "Welcome back to WASMrogue!"]] (global.get $cWelcomeText))
+
+    (call $centreOnPlayer)
+    (call $updateFov)
+    (call $render)
+  )
+
+  [[reserve TileTypes sizeof_Tile*2 gTileTypes]]
+  [[align 8]]
+  (data $tileTypeData (offset [[= TileTypes]])
+    [[data Tile walkable=1 transparent=1 ch='.' fg=cWhite bg=cFloorDark fglight=cWhite bglight=cFloorLight]]
+    [[data Tile ch='#' fg=cWhite bg=cWallDark fglight=cWhite bglight=cWallBright]]
+  )
+  [[consts tt 0 Floor Wall]]
+  (global $ttINVALID (export "gTileTypeCount") i32 [[= _Next]])
+  (global $tileTypeSize (export "gTileTypeSize") i32 [[= sizeof_Tile]])
 
   (data $stringData (offset [[= Strings]]) [[strings]])
   [[memory memory]]

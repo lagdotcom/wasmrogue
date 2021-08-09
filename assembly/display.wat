@@ -206,6 +206,24 @@
     )
   )
 
+  (func $fadeOut (export "fadeOut") (param $div i32)
+    (local $i i32)
+    (local $f i32)
+    (local $b i32)
+
+    (local.set $f (global.get $fg))
+    (local.set $b (global.get $bg))
+    (loop $colours
+      (i32.store8 (local.get $f) (i32.div_u (i32.load8_u (local.get $f)) (local.get $div)))
+      (i32.store8 (local.get $b) (i32.div_u (i32.load8_u (local.get $b)) (local.get $div)))
+
+      (local.set $f (i32.add (local.get $f) (i32.const 1)))
+      (local.set $b (i32.add (local.get $b) (i32.const 1)))
+
+      (br_if $colours (i32.lt_u (local.tee $i (i32.add (local.get $i) (i32.const 1))) (global.get $colourSize)))
+    )
+  )
+
   (func $getXY (param $x i32) (param $y i32) (result i32)
     (i32.add
       (global.get $chars)
