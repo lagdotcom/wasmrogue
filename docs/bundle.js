@@ -119,10 +119,92 @@
 
     var stdlibUrl = "stdlib.wasm";
 
+    class DataComponent {
+        i;
+        name;
+        mask;
+        base;
+        size;
+        construct;
+        hasData;
+        constructor(i, name, mask, base, size, construct) {
+            this.i = i;
+            this.name = name;
+            this.mask = mask;
+            this.base = base;
+            this.size = size;
+            this.construct = construct;
+            this.hasData = true;
+        }
+        add(e) {
+            e[this.name] = this.at(e.id);
+        }
+        at(index) {
+            const offset = index * this.size + this.base;
+            return this.construct(this.i.mainMem(offset, this.size));
+        }
+        all(count) {
+            return this.i.mainMem(this.base, this.size * count);
+        }
+    }
+
+    class TagComponent {
+        i;
+        name;
+        mask;
+        hasData;
+        constructor(i, name, mask) {
+            this.i = i;
+            this.name = name;
+            this.mask = mask;
+            this.hasData = false;
+        }
+        add(e) {
+            e[this.name] = true;
+        }
+    }
+
+    const makeAppearanceComponent = (i) => new DataComponent(i, "Appearance", i.main.Mask_Appearance.value, i.main.gAppearances.value, 10, (mem) => ({
+        ch: mem.getUint8(0),
+        layer: mem.getUint8(1),
+        fg: mem.getUint32(2, true),
+        name: i.string(mem.getUint32(6, true)),
+    }));
+    const makeAIComponent = (i) => new DataComponent(i, "AI", i.main.Mask_AI.value, i.main.gAIs.value, 3, (mem) => ({
+        fn: mem.getUint8(0),
+        chain: mem.getUint8(1),
+        duration: mem.getUint8(2),
+    }));
+    const makeCarriedComponent = (i) => new DataComponent(i, "Carried", i.main.Mask_Carried.value, i.main.gCarrieds.value, 1, (mem) => ({
+        carrier: mem.getUint8(0),
+    }));
+    const makeConsumableComponent = (i) => new DataComponent(i, "Consumable", i.main.Mask_Consumable.value, i.main.gConsumables.value, 4, (mem) => ({
+        fn: mem.getUint8(0),
+        power: mem.getUint8(1),
+        range: mem.getUint8(2),
+        radius: mem.getUint8(3),
+    }));
+    const makeFighterComponent = (i) => new DataComponent(i, "Fighter", i.main.Mask_Fighter.value, i.main.gFighters.value, 16, (mem) => ({
+        maxHp: mem.getUint32(0, true),
+        hp: mem.getInt32(4, true),
+        defence: mem.getUint32(8, true),
+        power: mem.getUint32(12, true),
+    }));
+    const makeInventoryComponent = (i) => new DataComponent(i, "Inventory", i.main.Mask_Inventory.value, i.main.gInventories.value, 1, (mem) => ({
+        size: mem.getUint8(0),
+    }));
+    const makePositionComponent = (i) => new DataComponent(i, "Position", i.main.Mask_Position.value, i.main.gPositions.value, 2, (mem) => ({
+        x: mem.getUint8(0),
+        y: mem.getUint8(1),
+    }));
+    const makeItemComponent = (i) => new TagComponent(i, "Item", i.main.Mask_Item.value);
+    const makePlayerComponent = (i) => new TagComponent(i, "Player", i.main.Mask_Player.value);
+    const makeSolidComponent = (i) => new TagComponent(i, "Solid", i.main.Mask_Solid.value);
+
     class WasmInterface {
         display;
         main;
-        bits;
+        components;
         displayChars;
         displayFg;
         displayBg;
@@ -131,12 +213,13 @@
         map;
         output;
         raw;
+        persistence;
         tileTypes;
         constructor(display, main) {
             this.display = display;
             this.main = main;
             const empty = new ArrayBuffer(0);
-            this.bits = {};
+            this.components = [];
             this.displayChars = new DataView(empty);
             this.displayFg = new DataView(empty);
             this.displayBg = new DataView(empty);
@@ -197,95 +280,10 @@
         entity(id) {
             const mask = this.entities.getBigUint64(id * this.main.gEntitySize.value, true);
             const e = { id };
-            if (mask & this.bits.Appearance)
-                e.Appearance = this.appearance(id);
-            if (mask & this.bits.AI)
-                e.AI = this.ai(id);
-            if (mask & this.bits.Carried)
-                e.Carried = this.carried(id);
-            if (mask & this.bits.Consumable)
-                e.Consumable = this.consumable(id);
-            if (mask & this.bits.Fighter)
-                e.Fighter = this.fighter(id);
-            if (mask & this.bits.Inventory)
-                e.Inventory = this.inventory(id);
-            if (mask & this.bits.Position)
-                e.Position = this.position(id);
-            if (mask & this.bits.Item)
-                e.Item = true;
-            if (mask & this.bits.Player)
-                e.Player = true;
-            if (mask & this.bits.Solid)
-                e.Solid = true;
+            for (const component of this.components)
+                if (mask & component.mask)
+                    component.add(e);
             return e;
-        }
-        appearance(id) {
-            const size = 10;
-            const offset = id * size + this.main.gAppearances.value;
-            const mem = this.mainMem(offset, size);
-            return {
-                ch: mem.getUint8(0),
-                layer: mem.getUint8(1),
-                fg: mem.getUint32(2, true),
-                name: this.string(mem.getUint32(6, true)),
-            };
-        }
-        ai(id) {
-            const size = 3;
-            const offset = id * size + this.main.gAIs.value;
-            const mem = this.mainMem(offset, size);
-            return {
-                fn: mem.getUint8(0),
-                chain: mem.getUint8(1),
-                duration: mem.getUint8(2),
-            };
-        }
-        carried(id) {
-            const size = 1;
-            const offset = id * size + this.main.gCarrieds.value;
-            const mem = this.mainMem(offset, size);
-            return {
-                carrier: mem.getUint8(0),
-            };
-        }
-        consumable(id) {
-            const size = 4;
-            const offset = id * size + this.main.gConsumables.value;
-            const mem = this.mainMem(offset, size);
-            return {
-                fn: mem.getUint8(0),
-                power: mem.getUint8(1),
-                range: mem.getUint8(2),
-                radius: mem.getUint8(3),
-            };
-        }
-        fighter(id) {
-            const size = 16;
-            const offset = id * size + this.main.gFighters.value;
-            const mem = this.mainMem(offset, size);
-            return {
-                maxHp: mem.getUint32(0, true),
-                hp: mem.getInt32(4, true),
-                defence: mem.getUint32(8, true),
-                power: mem.getUint32(12, true),
-            };
-        }
-        inventory(id) {
-            const size = 1;
-            const offset = id * size + this.main.gInventories.value;
-            const mem = this.mainMem(offset, size);
-            return {
-                size: mem.getUint8(0),
-            };
-        }
-        position(id) {
-            const size = 2;
-            const offset = id * size + this.main.gPositions.value;
-            const mem = this.mainMem(offset, size);
-            return {
-                x: mem.getUint8(0),
-                y: mem.getUint8(1),
-            };
         }
         tt(id) {
             const tSize = this.main.gTileTypeSize.value;
@@ -311,18 +309,18 @@
             this.displayBg = this.displayMem(this.display.bg.value, this.displaySize * 4);
             this.raw = new DataView(this.main.memory.buffer);
             this.tileTypes = range(this.main.gTileTypeCount.value).map((id) => this.tt(id));
-            this.bits = {
-                Appearance: this.main.Mask_Appearance.value,
-                AI: this.main.Mask_AI.value,
-                Carried: this.main.Mask_Carried.value,
-                Consumable: this.main.Mask_Consumable.value,
-                Fighter: this.main.Mask_Fighter.value,
-                Inventory: this.main.Mask_Inventory.value,
-                Item: this.main.Mask_Item.value,
-                Position: this.main.Mask_Position.value,
-                Player: this.main.Mask_Player.value,
-                Solid: this.main.Mask_Solid.value,
-            };
+            this.components = [
+                makeAIComponent(this),
+                makeAppearanceComponent(this),
+                makeCarriedComponent(this),
+                makeConsumableComponent(this),
+                makeFighterComponent(this),
+                makeInventoryComponent(this),
+                makeItemComponent(this),
+                makePlayerComponent(this),
+                makePositionComponent(this),
+                makeSolidComponent(this),
+            ];
         }
         refresh() {
             if (this.output)
@@ -348,16 +346,68 @@
             const message = iface.string(offset);
             console.log(message);
         };
+        const load = () => iface?.persistence?.load();
         const refresh = () => iface?.refresh();
+        const save = (offset, size) => iface?.persistence?.save(iface.mainMem(offset, size));
         const display = await getWASM(displayUrl);
         const stdlib = await getWASM(stdlibUrl);
         const main = await getWASM(mainUrl, {
             display,
             stdlib,
-            host: { debug, refresh, rng },
+            host: { debug, load, refresh, rng, save },
         });
         iface = new WasmInterface(display, main);
         return iface;
+    }
+
+    const saveFilename = "save";
+    class Persistence {
+        i;
+        db;
+        constructor(i) {
+            this.i = i;
+            i.persistence = this;
+            const req = indexedDB.open("wasmrogue", 1);
+            req.addEventListener("error", () => {
+                throw new Error("Couldn't load database");
+            });
+            req.addEventListener("success", () => (this.db = req.result));
+            req.addEventListener("upgradeneeded", (e) => {
+                const db = req.result;
+                if (e.oldVersion < 1) {
+                    db.createObjectStore("files");
+                }
+            });
+        }
+        load() {
+            const transaction = this.db.transaction(["files"], "readonly");
+            const store = transaction.objectStore("files");
+            const request = store.get(saveFilename);
+            request.addEventListener("success", () => {
+                if (!request.result)
+                    return this.i.main.loadFailed();
+                const data = request.result;
+                const source = new DataView(data);
+                const destination = this.i.mainMem(0, data.byteLength);
+                this.copy(destination, source);
+                this.i.main.loadSucceeded();
+            });
+            request.addEventListener("error", () => this.i.main.loadFailed());
+        }
+        save(source) {
+            const buffer = new ArrayBuffer(source.byteLength);
+            const dest = new DataView(buffer);
+            this.copy(dest, source);
+            const transaction = this.db.transaction(["files"], "readwrite");
+            transaction.addEventListener("complete", () => console.log("saved"));
+            transaction.addEventListener("error", () => console.log("could not save"));
+            const files = transaction.objectStore("files");
+            files.put(buffer, saveFilename);
+        }
+        copy(destination, source) {
+            for (let i = 0; i < source.byteLength; i++)
+                destination.setUint8(i, source.getUint8(i));
+        }
     }
 
     getInterface().then((i) => {
@@ -366,6 +416,7 @@
         i.initialise(80, 40);
         const d = new Display(i, container);
         window.d = d;
+        new Persistence(i);
     });
 
 }());
