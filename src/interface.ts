@@ -1,7 +1,21 @@
 import mainUrl from "../build/code.wasm";
 import displayUrl from "../build/display.wasm";
 import stdlibUrl from "../build/stdlib.wasm";
+import {
+  makeAIComponent,
+  makeAppearanceComponent,
+  makeCarriedComponent,
+  makeConsumableComponent,
+  makeFighterComponent,
+  makeInventoryComponent,
+  makeItemComponent,
+  makePlayerComponent,
+  makePositionComponent,
+  makeSolidComponent,
+} from "./components";
 import Display from "./Display";
+import Persistence from "./Persistence";
+import { RComponent, REntity, RLogMessage, RTileType } from "./types";
 import { range, rng } from "./utils";
 
 interface DisplayModule {
@@ -24,6 +38,7 @@ interface DisplayModule {
   contains(x: number, y: number): boolean;
   drawFg(x: number, y: number, ch: number, fg: number): void;
   drawFgBg(x: number, y: number, ch: number, fg: number, bg: number): void;
+  fadeOut(div: number): void;
   getLayer(x: number, y: number): number;
   resize(w: number, h: number): void;
   setFgBg(x: number, y: number, fg: number, bg: number): void;
@@ -51,6 +66,7 @@ interface MainModule {
   Mask_Solid: WebAssembly.Global;
 
   gGameMode: WebAssembly.Global;
+  gRenderMode: WebAssembly.Global;
 
   gMap: WebAssembly.Global;
   gMapHeight: WebAssembly.Global;
@@ -60,6 +76,7 @@ interface MainModule {
   gEntities: WebAssembly.Global;
   gEntitySize: WebAssembly.Global;
   gMaxEntities: WebAssembly.Global;
+  gNextEntity: WebAssembly.Global;
 
   gPlayerID: WebAssembly.Global;
   gTileTypeCount: WebAssembly.Global;
@@ -78,81 +95,13 @@ interface MainModule {
   initialise(w: number, h: number): void;
   hover(x: number, y: number): void;
   input(code: number, mod: number): boolean;
+  loadFailed(): void;
+  loadSucceeded(): void;
   moveEntity(eid: number, mx: number, my: number): boolean;
 }
 
-interface RLogMessage {
-  fg: number;
-  count: number;
-  message: string;
-}
-
-export interface RAppearance {
-  ch: number;
-  layer: number;
-  fg: number;
-  name: string;
-}
-
-export interface RAI {
-  fn: number;
-  chain: number;
-  duration: number;
-}
-
-export interface RCarried {
-  carrier: number;
-}
-
-export interface RConsumable {
-  fn: number;
-  power: number;
-  range: number;
-  radius: number;
-}
-
-export interface RFighter {
-  maxHp: number;
-  hp: number;
-  defence: number;
-  power: number;
-}
-
-export interface RInventory {
-  size: number;
-}
-
-export interface RPosition {
-  x: number;
-  y: number;
-}
-
-export interface REntity {
-  id: number;
-  Appearance?: RAppearance;
-  AI?: RAI;
-  Carried?: RCarried;
-  Consumable?: RConsumable;
-  Fighter?: RFighter;
-  Inventory?: RInventory;
-  Item?: boolean;
-  Position?: RPosition;
-  Player?: boolean;
-  Solid?: boolean;
-}
-
-export interface RTileType {
-  walkable: boolean;
-  transparent: boolean;
-  ch: number;
-  fg: number;
-  bg: number;
-  fgLight: number;
-  bgLight: number;
-}
-
 export class WasmInterface {
-  bits: Record<string, bigint>;
+  components: RComponent[];
   displayChars: DataView;
   displayFg: DataView;
   displayBg: DataView;
@@ -161,11 +110,12 @@ export class WasmInterface {
   map: DataView;
   output?: Display;
   raw: DataView;
+  persistence?: Persistence;
   tileTypes: RTileType[];
 
-  constructor(private display: DisplayModule, private main: MainModule) {
+  constructor(public display: DisplayModule, public main: MainModule) {
     const empty = new ArrayBuffer(0);
-    this.bits = {};
+    this.components = [];
     this.displayChars = new DataView(empty);
     this.displayFg = new DataView(empty);
     this.displayBg = new DataView(empty);
@@ -196,11 +146,11 @@ export class WasmInterface {
     return this.displayWidth * this.displayHeight;
   }
 
-  private mainMem(start: number, length: number) {
+  mainMem(start: number, length: number) {
     return new DataView(this.main.memory.buffer, start, length);
   }
 
-  private displayMem(start: number, length: number) {
+  displayMem(start: number, length: number) {
     return new DataView(this.display.memory.buffer, start, length);
   }
 
@@ -240,101 +190,10 @@ export class WasmInterface {
     );
     const e: REntity = { id };
 
-    if (mask & this.bits.Appearance) e.Appearance = this.appearance(id);
-    if (mask & this.bits.AI) e.AI = this.ai(id);
-    if (mask & this.bits.Carried) e.Carried = this.carried(id);
-    if (mask & this.bits.Consumable) e.Consumable = this.consumable(id);
-    if (mask & this.bits.Fighter) e.Fighter = this.fighter(id);
-    if (mask & this.bits.Inventory) e.Inventory = this.inventory(id);
-    if (mask & this.bits.Position) e.Position = this.position(id);
-
-    if (mask & this.bits.Item) e.Item = true;
-    if (mask & this.bits.Player) e.Player = true;
-    if (mask & this.bits.Solid) e.Solid = true;
+    for (const component of this.components)
+      if (mask & component.mask) component.add(e);
 
     return e;
-  }
-
-  appearance(id: number): RAppearance {
-    const size = 10;
-    const offset = id * size + this.main.gAppearances.value;
-    const mem = this.mainMem(offset, size);
-
-    return {
-      ch: mem.getUint8(0),
-      layer: mem.getUint8(1),
-      fg: mem.getUint32(2, true),
-      name: this.string(mem.getUint32(6, true)),
-    };
-  }
-
-  ai(id: number): RAI {
-    const size = 3;
-    const offset = id * size + this.main.gAIs.value;
-    const mem = this.mainMem(offset, size);
-
-    return {
-      fn: mem.getUint8(0),
-      chain: mem.getUint8(1),
-      duration: mem.getUint8(2),
-    };
-  }
-
-  carried(id: number): RCarried {
-    const size = 1;
-    const offset = id * size + this.main.gCarrieds.value;
-    const mem = this.mainMem(offset, size);
-
-    return {
-      carrier: mem.getUint8(0),
-    };
-  }
-
-  consumable(id: number): RConsumable {
-    const size = 4;
-    const offset = id * size + this.main.gConsumables.value;
-    const mem = this.mainMem(offset, size);
-
-    return {
-      fn: mem.getUint8(0),
-      power: mem.getUint8(1),
-      range: mem.getUint8(2),
-      radius: mem.getUint8(3),
-    };
-  }
-
-  fighter(id: number): RFighter {
-    const size = 16;
-    const offset = id * size + this.main.gFighters.value;
-    const mem = this.mainMem(offset, size);
-
-    return {
-      maxHp: mem.getUint32(0, true),
-      hp: mem.getInt32(4, true),
-      defence: mem.getUint32(8, true),
-      power: mem.getUint32(12, true),
-    };
-  }
-
-  inventory(id: number): RInventory {
-    const size = 1;
-    const offset = id * size + this.main.gInventories.value;
-    const mem = this.mainMem(offset, size);
-
-    return {
-      size: mem.getUint8(0),
-    };
-  }
-
-  position(id: number): RPosition {
-    const size = 2;
-    const offset = id * size + this.main.gPositions.value;
-    const mem = this.mainMem(offset, size);
-
-    return {
-      x: mem.getUint8(0),
-      y: mem.getUint8(1),
-    };
   }
 
   private tt(id: number): RTileType {
@@ -378,18 +237,18 @@ export class WasmInterface {
       this.tt(id)
     );
 
-    this.bits = {
-      Appearance: this.main.Mask_Appearance.value,
-      AI: this.main.Mask_AI.value,
-      Carried: this.main.Mask_Carried.value,
-      Consumable: this.main.Mask_Consumable.value,
-      Fighter: this.main.Mask_Fighter.value,
-      Inventory: this.main.Mask_Inventory.value,
-      Item: this.main.Mask_Item.value,
-      Position: this.main.Mask_Position.value,
-      Player: this.main.Mask_Player.value,
-      Solid: this.main.Mask_Solid.value,
-    };
+    this.components = [
+      makeAIComponent(this),
+      makeAppearanceComponent(this),
+      makeCarriedComponent(this),
+      makeConsumableComponent(this),
+      makeFighterComponent(this),
+      makeInventoryComponent(this),
+      makeItemComponent(this),
+      makePlayerComponent(this),
+      makePositionComponent(this),
+      makeSolidComponent(this),
+    ];
   }
 
   refresh(): void {
@@ -420,14 +279,17 @@ async function getInterface() {
     const message = iface.string(offset);
     console.log(message);
   };
+  const load = () => iface?.persistence?.load();
   const refresh = () => iface?.refresh();
+  const save = (offset: number, size: number) =>
+    iface?.persistence?.save(iface.mainMem(offset, size));
 
   const display = await getWASM(displayUrl);
   const stdlib = await getWASM(stdlibUrl);
   const main = await getWASM(mainUrl, {
     display,
     stdlib,
-    host: { debug, refresh, rng },
+    host: { debug, load, refresh, rng, save },
   });
   iface = new WasmInterface(
     display as unknown as DisplayModule,
