@@ -40,6 +40,7 @@
   (global $cBarText i32 [[= cWhite]])
   (global $cConfusionScroll i32 (i32.const 0xcf3fff00))
   (global $cCorpse i32 (i32.const 0xbf000000))
+  (global $cDescend i32 (i32.const 0x9f3fff00))
   (global $cEnemyAtk i32 (i32.const 0xffc0c000))
   (global $cEnemyDie i32 (i32.const 0xffa03000))
   (global $cError i32 (i32.const 0xff4040))
@@ -93,6 +94,7 @@
   (global $kUse i32 [[= 'U']])
   (global $kHistory i32 [[= 'V']])
   (global $kGenerate i32 (i32.const 116)) ;; F5
+  (global $kDot i32 (i32.const 190)) ;; .
   (global $kLook i32 (i32.const 191)) ;; /
 
   (global $kA i32 [[= 'A']])
@@ -111,6 +113,7 @@
   (global $renderMode (export "gRenderMode") (mut i32) (i32.const 0))
   (global $previousGameMode (mut i32) (i32.const 0))
   (global $previousRenderMode (mut i32) (i32.const 0))
+  (global $currentFloor (mut i32) (i32.const 0))
 
   ;; TODO remove me
   (global $playerID (export "gPlayerID") (mut i32) (i32.const 0))
@@ -171,7 +174,7 @@
   [[consts dir 0 Up Right Down Left]]
   [[consts res 0 OK Impossible]]
 
-  [[struct SaveHeader gm:u8 rm:u8 ecount:u8]]
+  [[struct SaveHeader gm:u8 rm:u8 ecount:u8 floor:u8]]
   [[reserve Header sizeof_SaveHeader]]
   [[align 16]]
 
@@ -353,6 +356,7 @@
   )
 
   (func $newGame
+    (global.set $currentFloor (i32.const 1))
     (call $generateMap)
     (call $clearLog)
     (call $addToLog [[s "Welcome to WASMrogue!"]] (global.get $cWelcomeText))
@@ -616,6 +620,12 @@
         (global.get $maxRooms)
       ))
     )
+
+    ;; place exit
+    (i32.store8 (call $getMapXY
+      (call $getRoomCX (local.tee $n (i32.sub (local.get $n) (i32.const 1))))
+      (call $getRoomCY (local.get $n))
+    ) (global.get $ttExit))
 
     (call $centreOnPlayer)
     (call $updateFov)
@@ -921,6 +931,7 @@
     $applyMeleeAction
     $applyMoveAction
     $applyPickupAction
+    $applyStairsAction
     $applyUseAction
     $applyWaitAction
 
@@ -948,7 +959,7 @@
     $applyHealingItem
     $applyLightningItem
   ))
-  [[consts act 0 None Bump Confirm Drop Dungeon Generate History Inventory Look Melee Move Pickup Use Wait]]
+  [[consts act 0 None Bump Confirm Drop Dungeon Generate History Inventory Look Melee Move Pickup Stairs Use Wait]]
   [[consts ai _Next None Hostile Confused]]
   [[consts gm _Next MainMenu Dungeon Dead History Inventory Popup Targeting]]
   [[consts rm _Next MainMenu Dungeon History Inventory Popup Targeting]]
@@ -1062,6 +1073,30 @@
     (call $startTargeting (global.get $actDungeon) (i32.const 0))
   )
 
+  (func $applyStairsAction
+    (local $me i32)
+    (local $pos i32)
+    (local $s i32)
+
+    (local.set $me (global.get $actionEntity))
+    (local.set $pos (call $getPosition (local.get $me)))
+
+    (if (i32.eq (i32.load8_u (call $getMapXY [[load $pos Position.x]] [[load $pos Position.y]])) (global.get $ttExit)) (then
+      (if (call $isPlayer (local.get $me)) (then
+        (global.set $currentFloor (i32.add (global.get $currentFloor) (i32.const 1)))
+        (call $generateMap)
+        (call $addToLog [[s "You descend the staircase."]] (global.get $cDescend))
+      ) (else
+        (local.set $s (call $strcpy (global.get $tempString) (call $getName (local.get $me))))
+        (local.set $s (call $strcpy (local.get $s) [[s " disappears down the stairs."]]))
+        (call $addToLog (global.get $tempString) (global.get $cWhite))
+        (call $removeEntity (local.get $me))
+      ))
+    ))
+
+    (call $impossible [[s "There are no stairs here."]])
+  )
+
   (func $applyAction
     ;; assume OK
     (global.set $resultID (global.get $resOK))
@@ -1132,6 +1167,14 @@
 
     (if (call $checkDirectionalInput) (then
       (global.set $actionID (global.get $actBump))
+      (return)
+    ))
+
+    (if (i32.and
+      (i32.eq (local.get $ch) (global.get $kDot))
+      (i32.and (global.get $inputMod) (global.get $kmShift))
+    ) (then
+      (global.set $actionID (global.get $actStairs))
       (return)
     ))
 
@@ -2441,11 +2484,21 @@
   (func $renderStats
     (local $s i32)
     (local $pc i32)
-    (local $y i32)
 
     (local.set $pc (call $getFighter (global.get $playerID)))
-    (local.set $y (i32.sub (global.get $displayHeight) (i32.const 1)))
-    (call $renderBar [[s "HP: "]] [[load $pc Fighter.hp]] [[load $pc Fighter.maxhp]] (i32.const 0) (local.get $y) (i32.const 20))
+
+    (local.set $s (call $strcpy (global.get $tempString) [[s "Dungeon level: "]]))
+    (local.set $s (call $strcpy (local.get $s) (call $itoa (global.get $currentFloor))))
+    (call $putsFgBg
+      (global.get $tempString)
+      (i32.const 0)
+      (i32.sub (global.get $displayHeight) (i32.const 3))
+      (global.get $cWhite)
+      (global.get $cBlack)
+      (global.get $alignLeft)
+    )
+
+    (call $renderBar [[s "HP: "]] [[load $pc Fighter.hp]] [[load $pc Fighter.maxhp]] (i32.const 0) (i32.sub (global.get $displayHeight) (i32.const 5)) (i32.const 20))
   )
 
   (func $renderBar (param $label i32) (param $value i32) (param $max i32) (param $x i32) (param $y i32) (param $size i32)
@@ -2734,6 +2787,7 @@
     [[store $Header SaveHeader.gm (global.get $gameMode)]]
     [[store $Header SaveHeader.rm (global.get $renderMode)]]
     [[store $Header SaveHeader.ecount (global.get $nextEntity)]]
+    [[store $Header SaveHeader.floor (global.get $currentFloor)]]
   )
 
   (func $loadFailed (export "loadFailed")
@@ -2745,6 +2799,7 @@
     (global.set $gameMode [[load $Header SaveHeader.gm]])
     (global.set $renderMode [[load $Header SaveHeader.rm]])
     (global.set $nextEntity [[load $Header SaveHeader.ecount]])
+    (global.set $currentFloor [[load $Header SaveHeader.floor]])
 
     (call $addToLog [[s "Welcome back to WASMrogue!"]] (global.get $cWelcomeText))
 
@@ -2754,12 +2809,12 @@
   )
 
   [[reserve TileTypes sizeof_Tile*2 gTileTypes]]
-  [[align 8]]
   (data $tileTypeData (offset [[= TileTypes]])
-    [[data Tile walkable=1 transparent=1 ch='.' fg=cWhite bg=cFloorDark fglight=cWhite bglight=cFloorLight]]
+    [[data Tile ch='.' fg=cWhite bg=cFloorDark fglight=cWhite bglight=cFloorLight walkable=1 transparent=1]]
     [[data Tile ch='#' fg=cWhite bg=cWallDark fglight=cWhite bglight=cWallBright]]
+    [[data Tile ch='>' fg=0x00006400 bg=0x32329600 fglight=cWhite bglight=0xc8b43200 walkable=1 transparent=1]]
   )
-  [[consts tt 0 Floor Wall]]
+  [[consts tt 0 Floor Wall Exit]]
   (global $ttINVALID (export "gTileTypeCount") i32 [[= _Next]])
   (global $tileTypeSize (export "gTileTypeSize") i32 [[= sizeof_Tile]])
 

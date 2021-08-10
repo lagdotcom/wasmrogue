@@ -198,7 +198,7 @@ export class WasmInterface {
 
   private tt(id: number): RTileType {
     const tSize = this.main.gTileTypeSize.value;
-    const offset = id * tSize;
+    const offset = this.main.gTileTypes.value + id * tSize;
     const mem = this.mainMem(offset, tSize);
 
     return {
