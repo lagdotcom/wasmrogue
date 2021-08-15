@@ -35,6 +35,7 @@ const keys = [
   Keys.VK_PAGE_DOWN,
   Keys.VK_END,
   Keys.VK_HOME,
+  Keys.VK_ADD,
   Keys.VK_F5,
   Keys.VK_SLASH,
 ];

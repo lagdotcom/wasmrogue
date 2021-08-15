@@ -38,25 +38,35 @@
   (global $cBarEmpty i32 (i32.const 0x40101000))
   (global $cBarFilled i32 (i32.const 0x00600000))
   (global $cBarText i32 [[= cWhite]])
+  (global $cConfusionOver i32 [[= cWhite]])
   (global $cConfusionScroll i32 (i32.const 0xcf3fff00))
   (global $cCorpse i32 (i32.const 0xbf000000))
   (global $cDescend i32 (i32.const 0x9f3fff00))
+  (global $cDrop i32 [[= cWhite]])
   (global $cEnemyAtk i32 (i32.const 0xffc0c000))
+  (global $cEnemyDescend i32 [[= cWhite]])
   (global $cEnemyDie i32 (i32.const 0xffa03000))
   (global $cError i32 (i32.const 0xff4040))
+  (global $cFireHit i32 [[= cWhite]])
   (global $cFloorDark i32 (i32.const 0x32329600))
   (global $cFloorLight i32 (i32.const 0xc8b43200))
+  (global $cGainLevel i32 [[= cWhite]])
+  (global $cGainXP i32 [[= cWhite]])
   (global $cHealingPotion i32 (i32.const 0x7f00ff00))
   (global $cHealthRecovered i32 (i32.const 0x00ff0000))
   (global $cImpossible i32 (i32.const 0x80808000))
   (global $cInvalid i32 [[= cYellow]])
+  (global $cLevelChoice i32 [[= cWhite]])
+  (global $cLightningHit i32 [[= cWhite]])
   (global $cLightningScroll i32 [[= cYellow]])
   (global $cMenuText i32 [[= cWhite]])
   (global $cMenuTitle i32 (i32.const 0xffff3f00))
   (global $cNeedsTarget i32 (i32.const 0x3fffff00))
   (global $cOrc i32 (i32.const 0x3f7f3f00))
+  (global $cPickup i32 [[= cWhite]])
   (global $cPlayerAtk i32 (i32.const 0xe0e0e000))
   (global $cPlayerDie i32 (i32.const 0xff303000))
+  (global $cSaved i32 [[= cWhite]])
   (global $cStatusEffectApplied i32 (i32.const 0x3fff3f00))
   (global $cTroll i32 (i32.const 0x007f0000))
   (global $cWallBright i32 (i32.const 0x826e3200))
@@ -88,12 +98,14 @@
   (global $kEnd i32 (i32.const 35))
   (global $kHome i32 (i32.const 36))
   (global $kSpace i32 [[= ' ']])
+  (global $kStats i32 [[= 'C']])
   (global $kDrop i32 [[= 'D']])
   (global $kGet i32 [[= 'G']])
   (global $kSave i32 [[= 'S']])
   (global $kUse i32 [[= 'U']])
   (global $kHistory i32 [[= 'V']])
   (global $kGenerate i32 (i32.const 116)) ;; F5
+  (global $kLevelUp i32 (i32.const 107)) ;; Numpad +
   (global $kDot i32 (i32.const 190)) ;; .
   (global $kLook i32 (i32.const 191)) ;; /
 
@@ -114,12 +126,13 @@
   (global $previousGameMode (mut i32) (i32.const 0))
   (global $previousRenderMode (mut i32) (i32.const 0))
   (global $currentFloor (mut i32) (i32.const 0))
+  (global $canShowLevelUpMessage (mut i32) (i32.const 1))
 
-  ;; TODO remove me
   (global $playerID (export "gPlayerID") (mut i32) (i32.const 0))
   (global $visionRange i32 (i32.const 8))
   (global $inventorySize i32 (i32.const 10))
   (global $displayEdge i32 (i32.const 8))
+  (global $statusHeight (mut i32) (i32.const 0))
   ;; TODO am I going to regret this
   (global $maxStringSize i32 (i32.const 100))
 
@@ -132,6 +145,7 @@
   (global $maxEntities (export "gMaxEntities") i32 (i32.const 256))
   (global $entitySize (export "gEntitySize") i32 [[= sizeof_Entity]])
   (global $nextEntity (export "gNextEntity") (mut i32) (i32.const 1))
+  (global $lastEntity (export "gLastEntity") (mut i32) (i32.const 0))
   (global $currentEntity (mut i32) (i32.const -1))
 
   [[consts align 0 Left Centre]]
@@ -141,8 +155,9 @@
   [[component AI fn:u8 chain:u8 duration:u8]]
   [[component Carried carrier:u8]]
   [[component Consumable fn:u8 power:u8 range:u8 radius:u8]]
-  [[component Fighter maxhp:i32 hp:i32 defence:i32 power:i32]]
+  [[component Fighter maxhp:u8 hp:s8 defence:u8 power:u8 xp:i32]]
   [[component Inventory size:u8]]
+  [[component Level level:u8 formulaBase:u8 formulaFactor:u8 xp:i32]]
   [[component Position x:u8 y:u8]]
 
   [[component Item]]
@@ -185,6 +200,7 @@
   [[reserve Consumables maxEntities*sizeof_Consumable gConsumables]]
   [[reserve Fighters maxEntities*sizeof_Fighter gFighters]]
   [[reserve Inventorys maxEntities*sizeof_Inventory gInventories]]
+  [[reserve Levels maxEntities*sizeof_Level gLevels]]
   [[reserve Positions maxEntities*sizeof_Position gPositions]]
   [[reserve Rooms maxRooms*sizeof_Room gRooms]]
 
@@ -349,14 +365,16 @@
     (global.set $renderMode (global.get $previousRenderMode))
   )
 
-  (func $initialise (export "initialise") (param $w i32) (param $h i32)
+  (func $initialise (export "initialise") (param $w i32) (param $h i32) (param $sh i32)
     (call $resize (local.get $w) (local.get $h))
+    (global.set $statusHeight (local.get $sh))
     (call $setMode (global.get $gmMainMenu) (global.get $rmMainMenu))
     (call $render)
   )
 
   (func $newGame
     (global.set $currentFloor (i32.const 1))
+    (call $constructPlayer (i32.const 0))
     (call $generateMap)
     (call $clearLog)
     (call $addToLog [[s "Welcome to WASMrogue!"]] (global.get $cWelcomeText))
@@ -375,9 +393,29 @@
     (call $memset (global.get $ExploredMap) (i32.const 0) (global.get $mapSize))
   )
 
-  (func $clearEntities
-    (call $memset64 (global.get $Entities) (i64.const 0) [[= sizeof_Entities]])
-    (global.set $nextEntity (i32.const 1))
+  ;; zero all entities that aren't the player and aren't carried by the player
+  (func $clearOldEntities
+    (local $eid i32)
+    (local $carried i32)
+    (local $last i32)
+
+    (local.set $eid (i32.const 1))
+    (local.set $last (global.get $lastEntity))
+    (loop $entities
+      (if (i32.eqz (call $hasCarried (local.get $eid))) (then
+        (call $removeEntity (local.get $eid))
+      ) (else
+        (local.set $carried (call $getCarried (local.get $eid)))
+        (if (i32.ne [[load $carried Carried.carrier]] (global.get $playerID)) (then
+          (call $removeEntity (local.get $eid))
+        ))
+      ))
+
+      (br_if $entities (i32.le_u
+        (local.tee $eid (i32.add (local.get $eid) (i32.const 1)))
+        (local.get $last)
+      ))
+    )
   )
 
   (func $getRoom (param $id i32) (result i32)
@@ -565,9 +603,7 @@
     (call $fillMap (global.get $ttWall))
     (call $clearVisibleMap)
     (call $clearExploredMap)
-
-    ;; TODO more sensible way of dealing with entities
-    (call $clearEntities)
+    (call $clearOldEntities)
 
     (local.set $i (i32.const 0))
     (local.set $n (i32.const 0))
@@ -593,13 +629,7 @@
       ;; first room?
       (if (i32.eqz (local.get $n)) (then
         (call $carveRoom (i32.const 0))
-
-        (call $constructPlayer
-          (global.get $playerID)
-          (call $getRoomCX (i32.const 0))
-          (call $getRoomCY (i32.const 0))
-        )
-
+        (call $placePlayer (call $getRoomCX (i32.const 0)) (call $getRoomCY (i32.const 0)))
         (local.set $n (i32.const 1))
       ) (else
         ;; intersects no other room?
@@ -927,11 +957,13 @@
     $generateMap
     $applyHistoryAction
     $applyInventoryAction
+    $applyLevelUpAction
     $applyLookAction
     $applyMeleeAction
     $applyMoveAction
     $applyPickupAction
     $applyStairsAction
+    $applyStatsAction
     $applyUseAction
     $applyWaitAction
 
@@ -944,14 +976,18 @@
     $applyDeadInput
     $applyHistoryInput
     $applyInventoryInput
+    $applyLevelUpInput
     $applyPopupInput
+    $applyStatsInput
     $applyTargetingInput
 
     $applyMainMenuRender
     $applyDungeonRender
     $applyHistoryRender
     $applyInventoryRender
+    $applyLevelUpRender
     $applyPopupRender
+    $applyStatsRender
     $applyTargetingRender
 
     $applyConfusionItem
@@ -959,10 +995,10 @@
     $applyHealingItem
     $applyLightningItem
   ))
-  [[consts act 0 None Bump Confirm Drop Dungeon Generate History Inventory Look Melee Move Pickup Stairs Use Wait]]
+  [[consts act 0 None Bump Confirm Drop Dungeon Generate History Inventory LevelUp Look Melee Move Pickup Stairs Stats Use Wait]]
   [[consts ai _Next None Hostile Confused]]
-  [[consts gm _Next MainMenu Dungeon Dead History Inventory Popup Targeting]]
-  [[consts rm _Next MainMenu Dungeon History Inventory Popup Targeting]]
+  [[consts gm _Next MainMenu Dungeon Dead History Inventory LevelUp Popup Stats Targeting]]
+  [[consts rm _Next MainMenu Dungeon History Inventory LevelUp Popup Stats Targeting]]
   [[consts it _Next Confusion Fireball Healing Lightning]]
 
   (func $applyNoAction)
@@ -1049,7 +1085,7 @@
       (call $takeDamage (local.get $enemy) (local.get $damage))
       (call $addToLog (global.get $tempString) (local.get $fg))
 
-      (call $checkKill (local.get $enemy))
+      (call $checkKill (local.get $enemy) (local.get $me))
     ) (else
       (local.set $s (call $strcpy (local.get $s) [[s " but does no damage."]]))
       (call $addToLog (global.get $tempString) (local.get $fg))
@@ -1089,9 +1125,11 @@
       ) (else
         (local.set $s (call $strcpy (global.get $tempString) (call $getName (local.get $me))))
         (local.set $s (call $strcpy (local.get $s) [[s " disappears down the stairs."]]))
-        (call $addToLog (global.get $tempString) (global.get $cWhite))
+        (call $addToLog (global.get $tempString) (global.get $cEnemyDescend))
         (call $removeEntity (local.get $me))
       ))
+
+      (return)
     ))
 
     (call $impossible [[s "There are no stairs here."]])
@@ -1221,10 +1259,20 @@
       (return)
     ))
 
+    (if (i32.eq (local.get $ch) (global.get $kLevelUp)) (then
+      (global.set $actionID (global.get $actLevelUp))
+      (return)
+    ))
+
+    (if (i32.eq (local.get $ch) (global.get $kStats)) (then
+      (global.set $actionID (global.get $actStats))
+      (return)
+    ))
+
     (if (i32.eq (local.get $ch) (global.get $kSave)) (then
       (call $prepareSave)
       (call $save (i32.const 0) (global.get $savefileSize))
-      (call $addToLog [[s "Game saved."]] (global.get $cWhite))
+      (call $addToLog [[s "Game saved."]] (global.get $cSaved))
       (call $render)
       (return)
     ))
@@ -1328,6 +1376,47 @@
     ))
   )
 
+  (func $applyLevelUpInput
+    (local $ch i32)
+    (local $chosen i32)
+    (local $fighter i32)
+
+    (local.set $ch (global.get $inputChar))
+    (local.set $fighter (call $getFighter (global.get $playerID)))
+
+    (if (i32.eq (local.get $ch) [[= 'C']]) (then
+      (call $increasePlayerCon (local.get $fighter))
+      (local.set $chosen (i32.const 1))
+    ))
+    (if (i32.eq (local.get $ch) [[= 'S']]) (then
+      (call $increasePlayerStr (local.get $fighter))
+      (local.set $chosen (i32.const 1))
+    ))
+    (if (i32.eq (local.get $ch) [[= 'A']]) (then
+      (call $increasePlayerAgi (local.get $fighter))
+      (local.set $chosen (i32.const 1))
+    ))
+
+    (if (local.get $chosen) (then
+      (call $increasePlayerLevel)
+      (call $restoreMode)
+      (call $render)
+    ))
+  )
+
+  (func $applyStatsInput
+    (local $ch i32)
+    (local.set $ch (global.get $inputChar))
+
+    (if (i32.or
+      (i32.eq (local.get $ch) (global.get $kReturn))
+      (i32.eq (local.get $ch) (global.get $kEscape))
+    ) (then
+      (global.set $actionID (global.get $actDungeon))
+      (return)
+    ))
+  )
+
   (func $applyTargetingInput
     (local $ch i32)
     (local $dx i32)
@@ -1412,7 +1501,7 @@
       (local.set $pos (i32.add (local.get $pos) [[= sizeof_Position]]))
       (br_if $entities (i32.le_u
         (local.tee $eid (i32.add (local.get $eid) (i32.const 1)))
-        (global.get $nextEntity)
+        (global.get $lastEntity)
       ))
     )
 
@@ -1461,7 +1550,7 @@
         ))
       ))
 
-      (br_if $entities (i32.lt_u (local.tee $eid (i32.add (local.get $eid) (i32.const 1))) (global.get $nextEntity)))
+      (br_if $entities (i32.le_u (local.tee $eid (i32.add (local.get $eid) (i32.const 1))) (global.get $lastEntity)))
     )
 
     (local.get $closest)
@@ -1486,7 +1575,7 @@
       (local.set $pos (i32.add (local.get $pos) [[= sizeof_Position]]))
       (br_if $entities (i32.le_u
         (local.tee $eid (i32.add (local.get $eid) (i32.const 1)))
-        (global.get $nextEntity)
+        (global.get $lastEntity)
       ))
     )
 
@@ -1514,7 +1603,7 @@
 
       (br_if $entities (i32.le_u
         (local.tee $eid (i32.add (local.get $eid) (i32.const 1)))
-        (global.get $nextEntity)
+        (global.get $lastEntity)
       ))
     )
 
@@ -1538,7 +1627,7 @@
       (local.set $carried (i32.add (local.get $carried) [[= sizeof_Carried]]))
       (br_if $entities (i32.le_u
         (local.tee $eid (i32.add (local.get $eid) (i32.const 1)))
-        (global.get $nextEntity)
+        (global.get $lastEntity)
       ))
     )
 
@@ -1563,7 +1652,7 @@
       (local.set $carried (i32.add (local.get $carried) [[= sizeof_Carried]]))
       (br_if $entities (i32.le_u
         (local.tee $eid (i32.add (local.get $eid) (i32.const 1)))
-        (global.get $nextEntity)
+        (global.get $lastEntity)
       ))
     )
 
@@ -1571,13 +1660,42 @@
   )
 
   (func $spawnEntity (result i32)
-    (global.get $nextEntity)
+    (local $eid i32)
+
+    (if (i32.eq (global.get $nextEntity) (global.get $maxEntities)) (then
+      (call $debug [[s "out of entity space"]])
+      (unreachable)
+    ))
+
+    ;; return existing space
+    (global.set $lastEntity (call $max (global.get $lastEntity) (local.tee $eid (global.get $nextEntity))))
+
+    ;; find next space
     (global.set $nextEntity (i32.add (global.get $nextEntity) (i32.const 1)))
+    (loop $space
+      (if (i64.eqz [[load (call $getEntity (global.get $nextEntity)) Entity.mask]]) (return (local.get $eid)))
+
+      (global.set $nextEntity (i32.add (global.get $nextEntity) (i32.const 1)))
+      (br $space)
+    )
+    (unreachable)
   )
 
   (func $removeEntity (param $eid i32)
-    ;; TODO this is terrible :D
     [[store (call $getEntity (local.get $eid)) Entity.mask 0]]
+
+    ;; ready to reclaim space
+    (if (i32.lt_u (local.get $eid) (global.get $nextEntity))
+      (global.set $nextEntity (local.get $eid))
+    )
+
+    ;; find highest used
+    (loop $used
+      (if (i64.ne [[load (call $getEntity (global.get $lastEntity)) Entity.mask]] (i64.const 0)) (return))
+
+      (global.set $lastEntity (i32.sub (global.get $lastEntity) (i32.const 1)))
+      (br $used)
+    )
   )
 
   (func $spawnEnemyAt (param $x i32) (param $y i32)
@@ -1601,12 +1719,12 @@
   (func $constructOrc (param $eid i32)
     [[attach $eid Appearance ch='o' colour=cOrc layer=layerActor name="Orc"]]
     [[attach $eid AI fn=$aiHostile]]
-    [[attach $eid Fighter maxhp=10 hp=10 defence=0 power=3]]
+    [[attach $eid Fighter maxhp=10 hp=10 defence=0 power=3 xp=35]]
   )
   (func $constructTroll (param $eid i32)
     [[attach $eid Appearance ch='T' colour=cTroll layer=layerActor name="Troll"]]
     [[attach $eid AI fn=$aiHostile]]
-    [[attach $eid Fighter maxhp=16 hp=16 defence=1 power=4]]
+    [[attach $eid Fighter maxhp=16 hp=16 defence=1 power=4 xp=100]]
   )
 
   (func $spawnItemAt (param $x i32) (param $y i32)
@@ -1654,13 +1772,18 @@
     [[attach $eid Consumable fn=$itFireball power=12 radius=3]]
   )
 
-  (func $constructPlayer (param $eid i32) (param $x i32) (param $y i32)
+  (func $constructPlayer (param $eid i32)
+    (global.set $playerID (local.get $eid))
+
     (call $setPlayer (local.get $eid))
     (call $setSolid (local.get $eid))
     [[attach $eid Appearance ch='@' colour=cWhite layer=layerActor name="Player"]]
     [[attach $eid Fighter maxhp=32 hp=32 defence=2 power=5]]
     [[attach $eid Inventory size=inventorySize]]
-    [[attach $eid Position x=$x y=$y]]
+    [[attach $eid Level level=1 formulaBase=200 formulaFactor=150]]
+  )
+  (func $placePlayer (param $x i32) (param $y i32)
+    [[attach $playerID Position x=$x y=$y]]
   )
 
   [[system RenderEntity Appearance Position]]
@@ -1996,6 +2119,7 @@
     (local $h i32)
 
     (call $applyDungeonRender)
+    (call $fadeOut (i32.const 8))
 
     (local.set $count (call $getInventoryCount (global.get $playerID)))
     (local.set $w (i32.add (call $strlen (global.get $actionMessage)) (i32.const 4)))
@@ -2022,13 +2146,165 @@
       (local.set $s (call $strcpy (global.get $tempString) [[s " ) "]]))
       (local.set $s (call $strcpy (local.get $s) (call $getName (call $getInventoryItem (global.get $playerID) (local.get $i)))))
       ;; overwrite first char with selection char
-      (i32.store8 (global.get $tempString) (i32.add (local.get $i) [[= 'a']]))
+      (i32.store8 (global.get $tempString) (i32.add (local.get $i) [[= 'A']]))
       (call $putsFg (global.get $tempString) (local.get $x) (local.tee $y (i32.add (local.get $y) (i32.const 1))) (global.get $cWhite) (global.get $alignLeft))
 
       (br_if $items (i32.lt_u
         (local.tee $i (i32.add (local.get $i) (i32.const 1)))
         (local.get $count)
       ))
+    )
+  )
+
+  (func $applyLevelUpRender
+    (local $i i32)
+    (local $s i32)
+    (local $x i32)
+    (local $y i32)
+    (local $w i32)
+    (local $h i32)
+    (local $fighter i32)
+
+    (call $applyDungeonRender)
+    (call $fadeOut (i32.const 8))
+
+    (local.set $fighter (call $getFighter (global.get $playerID)))
+    (local.set $w (i32.const 35))
+    (local.set $h (i32.const 9))
+    (local.set $x (i32.shr_u (i32.sub (global.get $displayWidth) (local.get $w)) (i32.const 1)))
+    (local.set $y (i32.shr_u (i32.sub (global.get $displayHeight) (local.get $h)) (i32.const 1)))
+
+    (call $drawBox
+      (local.get $x)
+      (local.get $y)
+      (local.get $w)
+      (local.get $h)
+      (global.get $cWhite)
+      (global.get $cBlack)
+    )
+    (local.set $x (i32.add (local.get $x) (i32.const 1)))
+
+    (call $putsFgBg [[s "Level Up"]]
+      (local.get $x)
+      (local.tee $y (i32.add (local.get $y) (i32.const 1)))
+      (global.get $cWhite) (global.get $cBlack) (global.get $alignLeft)
+    )
+    (call $putsFgBg [[s "Congratulations! You level up!"]]
+      (local.get $x)
+      (local.tee $y (i32.add (local.get $y) (i32.const 1)))
+      (global.get $cWhite) (global.get $cBlack) (global.get $alignLeft)
+    )
+    (call $putsFgBg [[s "Select an attribute to increase."]]
+      (local.get $x)
+      (local.tee $y (i32.add (local.get $y) (i32.const 1)))
+      (global.get $cWhite) (global.get $cBlack) (global.get $alignLeft)
+    )
+
+    (local.set $y (i32.add (local.get $y) (i32.const 1)))
+
+    (local.set $s (call $strcpy (global.get $tempString) [[s "C)onstitution [+20hp, from "]]))
+    (local.set $s (call $strcpy (local.get $s) (call $itoa [[load $fighter Fighter.maxhp]])))
+    (local.set $s (call $strcpy (local.get $s) [[s "]"]]))
+    (call $putsFgBg (global.get $tempString)
+      (local.get $x)
+      (local.tee $y (i32.add (local.get $y) (i32.const 1)))
+      (global.get $cWhite) (global.get $cBlack) (global.get $alignLeft)
+    )
+
+    (local.set $s (call $strcpy (global.get $tempString) [[s "S)trength [+1 attack, from "]]))
+    (local.set $s (call $strcpy (local.get $s) (call $itoa [[load $fighter Fighter.power]])))
+    (local.set $s (call $strcpy (local.get $s) [[s "]"]]))
+    (call $putsFgBg (global.get $tempString)
+      (local.get $x)
+      (local.tee $y (i32.add (local.get $y) (i32.const 1)))
+      (global.get $cWhite) (global.get $cBlack) (global.get $alignLeft)
+    )
+
+    (local.set $s (call $strcpy (global.get $tempString) [[s "A)gility [+1 defence, from "]]))
+    (local.set $s (call $strcpy (local.get $s) (call $itoa [[load $fighter Fighter.defence]])))
+    (local.set $s (call $strcpy (local.get $s) [[s "]"]]))
+    (call $putsFgBg (global.get $tempString)
+      (local.get $x)
+      (local.tee $y (i32.add (local.get $y) (i32.const 1)))
+      (global.get $cWhite) (global.get $cBlack) (global.get $alignLeft)
+    )
+  )
+
+  (func $applyStatsRender
+    (local $i i32)
+    (local $s i32)
+    (local $x i32)
+    (local $y i32)
+    (local $w i32)
+    (local $h i32)
+    (local $fighter i32)
+    (local $level i32)
+
+    (call $applyDungeonRender)
+    (call $fadeOut (i32.const 8))
+
+    (local.set $fighter (call $getFighter (global.get $playerID)))
+    (local.set $level (call $getLevel (global.get $playerID)))
+
+    (local.set $w (i32.const 30))
+    (local.set $h (i32.const 9))
+    (local.set $x (i32.shr_u (i32.sub (global.get $displayWidth) (local.get $w)) (i32.const 1)))
+    (local.set $y (i32.shr_u (i32.sub (global.get $displayHeight) (local.get $h)) (i32.const 1)))
+
+    (call $drawBox
+      (local.get $x)
+      (local.get $y)
+      (local.get $w)
+      (local.get $h)
+      (global.get $cWhite)
+      (global.get $cBlack)
+    )
+    (local.set $x (i32.add (local.get $x) (i32.const 1)))
+
+    (call $putsFgBg [[s "Character Information:"]]
+      (local.get $x)
+      (local.tee $y (i32.add (local.get $y) (i32.const 1)))
+      (global.get $cWhite) (global.get $cBlack) (global.get $alignLeft)
+    )
+
+    (local.set $s (call $strcpy (global.get $tempString) [[s "Level: "]]))
+    (local.set $s (call $strcpy (local.get $s) (call $itoa [[load $level Level.level]])))
+    (call $putsFgBg (global.get $tempString)
+      (local.get $x)
+      (local.tee $y (i32.add (local.get $y) (i32.const 2)))
+      (global.get $cWhite) (global.get $cBlack) (global.get $alignLeft)
+    )
+
+    (local.set $s (call $strcpy (global.get $tempString) [[s "XP: "]]))
+    (local.set $s (call $strcpy (local.get $s) (call $itoa [[load $level Level.xp]])))
+    (call $putsFgBg (global.get $tempString)
+      (local.get $x)
+      (local.tee $y (i32.add (local.get $y) (i32.const 1)))
+      (global.get $cWhite) (global.get $cBlack) (global.get $alignLeft)
+    )
+
+    (local.set $s (call $strcpy (global.get $tempString) [[s "XP for next level: "]]))
+    (local.set $s (call $strcpy (local.get $s) (call $itoa (call $getExperienceTNL (global.get $playerID)))))
+    (call $putsFgBg (global.get $tempString)
+      (local.get $x)
+      (local.tee $y (i32.add (local.get $y) (i32.const 1)))
+      (global.get $cWhite) (global.get $cBlack) (global.get $alignLeft)
+    )
+
+    (local.set $s (call $strcpy (global.get $tempString) [[s "Attack: "]]))
+    (local.set $s (call $strcpy (local.get $s) (call $itoa [[load $fighter Fighter.power]])))
+    (call $putsFgBg (global.get $tempString)
+      (local.get $x)
+      (local.tee $y (i32.add (local.get $y) (i32.const 1)))
+      (global.get $cWhite) (global.get $cBlack) (global.get $alignLeft)
+    )
+
+    (local.set $s (call $strcpy (global.get $tempString) [[s "Defence: "]]))
+    (local.set $s (call $strcpy (local.get $s) (call $itoa [[load $fighter Fighter.defence]])))
+    (call $putsFgBg (global.get $tempString)
+      (local.get $x)
+      (local.tee $y (i32.add (local.get $y) (i32.const 1)))
+      (global.get $cWhite) (global.get $cBlack) (global.get $alignLeft)
     )
   )
 
@@ -2303,7 +2579,7 @@
       (local.set $s (call $strcpy (global.get $tempString) [[s "The "]]))
       (local.set $s (call $strcpy (local.get $s) (call $getName (global.get $currentEntity))))
       (local.set $s (call $strcpy (local.get $s) [[s " is no longer confused."]]))
-      (call $addToLog (global.get $tempString) (global.get $cWhite))
+      (call $addToLog (global.get $tempString) (global.get $cConfusionOver))
 
       [[store $ai AI.fn [[load $ai AI.chain]]]]
       (return)
@@ -2346,30 +2622,75 @@
     (call $strcpy (i32.add (local.get $o) [[= sizeof_LogMsg]]) (local.get $s)) (drop)
   )
 
-  (func $checkKill (param $eid i32)
+  (func $checkKill (param $victimId i32) (param $attackerId i32)
     (local $fighter i32)
     (local $s i32)
     (local $fg i32)
+    (local $xp i32)
 
-    (local.set $fighter (call $getFighter (local.get $eid)))
+    (local.set $fighter (call $getFighter (local.get $victimId)))
     (if (i32.gt_s [[load $fighter Fighter.hp]] (i32.const 0)) (return))
 
-    (if (call $isPlayer (local.get $eid)) (then
+    (if (call $isPlayer (local.get $victimId)) (then
       (local.set $s [[s "You died!"]])
       (local.set $fg (global.get $cPlayerDie))
       (call $setMode (global.get $gmDead) (global.get $rmDungeon))
     ) (else
-      (local.set $s (call $strcpy (global.get $tempString) (call $getName (local.get $eid))))
+      (local.set $s (call $strcpy (global.get $tempString) (call $getName (local.get $victimId))))
       (call $strcpy (local.get $s) [[s " is dead!"]]) (drop)
       (local.set $s (global.get $tempString))
       (local.set $fg (global.get $cEnemyDie))
     ))
     (call $addToLog (local.get $s) (local.get $fg))
 
-    [[attach $eid Appearance ch='%' colour=cCorpse layer=layerCorpse name="corpse"]]
-    (call $unsetSolid (local.get $eid))
-    (call $detachAI (local.get $eid))
-    (call $detachFighter (local.get $eid)) ;; might cause problems...
+    (if (call $hasLevel (local.get $attackerId))
+      (call $gainXp (local.get $attackerId) (local.tee $xp [[load $fighter Fighter.xp]]))
+    )
+
+    [[attach $victimId Appearance ch='%' colour=cCorpse layer=layerCorpse name="corpse"]]
+    (call $unsetSolid (local.get $victimId))
+    (call $detachAI (local.get $victimId))
+    (call $detachFighter (local.get $victimId)) ;; might cause problems...
+  )
+
+  (func $gainXp (param $eid i32) (param $xp i32)
+    (local $level i32)
+    (local $s i32)
+
+    (local.set $level (call $getLevel (local.get $eid)))
+    [[store $level Level.xp (i32.add [[load $level Level.xp]] (local.get $xp))]]
+
+    (if (call $isPlayer (local.get $eid)) (then
+      (local.set $s (call $strcpy (global.get $tempString) [[s "You gain "]]))
+      (local.set $s (call $strcpy (local.get $s) (call $itoa (local.get $xp))))
+      (local.set $s (call $strcpy (local.get $s) [[s " experience."]]))
+      (call $addToLog (global.get $tempString) (global.get $cGainXP))
+
+      (if (i32.and (global.get $canShowLevelUpMessage) (call $canLevelUp (local.get $eid))) (then
+        (global.set $canShowLevelUpMessage (i32.const 0))
+        (call $addToLog [[s "You're ready to level up!"]] (global.get $cGainLevel))
+      ))
+    ))
+  )
+
+  (func $canLevelUp (param $eid i32) (result i32)
+    (local $level i32)
+
+    (local.set $level (call $getLevel (local.get $eid)))
+    (i32.ge_u [[load $level Level.xp]] (call $getExperienceTNL (local.get $eid)))
+  )
+
+  (func $getExperienceTNL (param $eid i32) (result i32)
+    (local $level i32)
+
+    (local.set $level (call $getLevel (local.get $eid)))
+    (i32.add
+      [[load $level Level.formulaBase]]
+      (i32.mul
+        [[load $level Level.formulaFactor]]
+        [[load $level Level.level]]
+      )
+    )
   )
 
   (func $applyAlignment (param $s i32) (param $x i32) (param $align i32) (result i32)
@@ -2458,7 +2779,7 @@
       ) (return))
 
       (local.set $msg (i32.sub (local.get $msg) (global.get $logMsgSize)))
-      (br_if $messages (i32.ge_u (local.get $y) (local.get $minY)))
+      (br_if $messages (i32.ge_s (local.get $y) (local.get $minY)))
     )
   )
 
@@ -2468,7 +2789,7 @@
     (call $renderMessageLog
       (i32.const 21)
       (i32.sub (global.get $displayHeight) (i32.const 1))
-      (i32.sub (global.get $displayHeight) (i32.const 5))
+      (i32.sub (global.get $displayHeight) (global.get $statusHeight))
       (i32.const 0)
     )
   )
@@ -2484,8 +2805,10 @@
   (func $renderStats
     (local $s i32)
     (local $pc i32)
+    (local $level i32)
 
     (local.set $pc (call $getFighter (global.get $playerID)))
+    (local.set $level (call $getLevel (global.get $playerID)))
 
     (local.set $s (call $strcpy (global.get $tempString) [[s "Dungeon level: "]]))
     (local.set $s (call $strcpy (local.get $s) (call $itoa (global.get $currentFloor))))
@@ -2498,7 +2821,8 @@
       (global.get $alignLeft)
     )
 
-    (call $renderBar [[s "HP: "]] [[load $pc Fighter.hp]] [[load $pc Fighter.maxhp]] (i32.const 0) (i32.sub (global.get $displayHeight) (i32.const 5)) (i32.const 20))
+    (call $renderBar [[s "HP: "]] [[load $pc Fighter.hp]] [[load $pc Fighter.maxhp]] (i32.const 0) (i32.sub (global.get $displayHeight) (global.get $statusHeight)) (i32.const 20))
+    (call $renderBar [[s "XP: "]] [[load $level Level.xp]] (call $getExperienceTNL (global.get $playerID)) (i32.const 0) (i32.add (i32.sub (global.get $displayHeight) (global.get $statusHeight)) (i32.const 1)) (i32.const 20))
   )
 
   (func $renderBar (param $label i32) (param $value i32) (param $max i32) (param $x i32) (param $y i32) (param $size i32)
@@ -2507,11 +2831,14 @@
 
     (call $blankBg (local.get $x) (local.get $y) (local.get $size) (i32.const 1) (global.get $cBarEmpty))
 
-    ;; bar_width = int(float(current_value) / maximum_value * total_width)
-    (if (i32.gt_s (local.tee $width (i32.trunc_f32_s (f32.mul (f32.div
-      (f32.convert_i32_s (local.get $value))
-      (f32.convert_i32_s (local.get $max))
-    ) (f32.convert_i32_s (local.get $size))))) (i32.const 0))
+    ;; bar_width = min(current_value, maximum_value) * total_width / maximum_value
+    (if (i32.gt_s (local.tee $width (i32.div_u
+      (i32.mul
+        (call $min (local.get $value) (local.get $max))
+        (local.get $size)
+      )
+      (local.get $max)
+    )) (i32.const 0))
       (call $blankBg (local.get $x) (local.get $y) (local.get $width) (i32.const 1) (global.get $cBarFilled))
     )
 
@@ -2592,9 +2919,9 @@
     (local.set $s (call $strcpy (local.get $s) (call $itoa (local.get $damage))))
     (local.set $s (call $strcpy (local.get $s) [[s " hit points."]]))
     (call $takeDamage (local.get $eid) (local.get $damage))
-    (call $addToLog (global.get $tempString) (global.get $cWhite))
+    (call $addToLog (global.get $tempString) (global.get $cLightningHit))
 
-    (call $checkKill (local.get $eid))
+    (call $checkKill (local.get $eid) (local.get $consumer))
     (call $removeEntity (global.get $actionItem))
     (call $tick)
   )
@@ -2677,14 +3004,14 @@
           (local.set $s (call $strcpy (local.get $s) (call $itoa (local.get $damage))))
           (local.set $s (call $strcpy (local.get $s) [[s " hit points."]]))
           (call $takeDamage (local.get $eid) (local.get $damage))
-          (call $addToLog (global.get $tempString) (global.get $cWhite))
+          (call $addToLog (global.get $tempString) (global.get $cFireHit))
 
-          (call $checkKill (local.get $eid))
+          (call $checkKill (local.get $eid) (global.get $actionEntity))
           (local.set $hits (i32.add (local.get $hits) (i32.const 1)))
         ))
       ))
 
-      (br_if $entities (i32.lt_u (local.tee $eid (i32.add (local.get $eid) (i32.const 1))) (global.get $nextEntity)))
+      (br_if $entities (i32.le_u (local.tee $eid (i32.add (local.get $eid) (i32.const 1))) (global.get $lastEntity)))
     )
 
     (if (i32.eqz (local.get $hits)) (then
@@ -2728,7 +3055,7 @@
     (local.set $s (call $strcpy (global.get $tempString) [[s "You picked up the "]]))
     (local.set $s (call $strcpy (local.get $s) (call $getName (local.get $item))))
     (local.set $s (call $strcpy (local.get $s) [[s "!"]]))
-    (call $addToLog (global.get $tempString) (global.get $cWhite))
+    (call $addToLog (global.get $tempString) (global.get $cPickup))
     (call $tick)
   )
 
@@ -2757,7 +3084,7 @@
     (local.set $s (call $strcpy (global.get $tempString) [[s "You dropped the "]]))
     (local.set $s (call $strcpy (local.get $s) (call $getName (global.get $actionItem))))
     (local.set $s (call $strcpy (local.get $s) [[s "."]]))
-    (call $addToLog (global.get $tempString) (global.get $cWhite))
+    (call $addToLog (global.get $tempString) (global.get $cDrop))
     (call $tick)
   )
 
@@ -2799,6 +3126,7 @@
     (global.set $gameMode [[load $Header SaveHeader.gm]])
     (global.set $renderMode [[load $Header SaveHeader.rm]])
     (global.set $nextEntity [[load $Header SaveHeader.ecount]])
+    (global.set $lastEntity (global.get $nextEntity))
     (global.set $currentFloor [[load $Header SaveHeader.floor]])
 
     (call $addToLog [[s "Welcome back to WASMrogue!"]] (global.get $cWelcomeText))
@@ -2806,6 +3134,50 @@
     (call $centreOnPlayer)
     (call $updateFov)
     (call $render)
+  )
+
+  (func $increasePlayerAgi (param $fighter i32)
+    [[store $fighter Fighter.defence (i32.add [[load $fighter Fighter.defence]] (i32.const 1))]]
+    (call $addToLog [[s "Your movements are getting swifter!"]] (global.get $cLevelChoice))
+  )
+  (func $increasePlayerCon (param $fighter i32)
+    [[store $fighter Fighter.hp (i32.add [[load $fighter Fighter.hp]] (i32.const 20))]]
+    [[store $fighter Fighter.maxhp (i32.add [[load $fighter Fighter.maxhp]] (i32.const 20))]]
+    (call $addToLog [[s "Your health improves!"]] (global.get $cLevelChoice))
+  )
+  (func $increasePlayerStr (param $fighter i32)
+    [[store $fighter Fighter.power (i32.add [[load $fighter Fighter.power]] (i32.const 1))]]
+    (call $addToLog [[s "You feel stronger!"]] (global.get $cLevelChoice))
+  )
+
+  (func $increasePlayerLevel
+    (local $level i32)
+    (local $s i32)
+
+    (local.set $level (call $getLevel (global.get $playerID)))
+    [[store $level Level.level (i32.add [[load $level Level.level]] (i32.const 1))]]
+
+    (global.set $canShowLevelUpMessage (i32.const 1))
+
+    (local.set $s (call $strcpy (global.get $tempString) [[s "You advance to level "]]))
+    (local.set $s (call $strcpy (local.get $s) (call $itoa [[load $level Level.level]])))
+    (local.set $s (call $strcpy (local.get $s) [[s "!"]]))
+    (call $addToLog (global.get $tempString) (global.get $cGainLevel))
+  )
+
+  (func $applyLevelUpAction
+    (if (call $canLevelUp (global.get $playerID)) (then
+      (call $saveMode)
+      (call $setMode (global.get $gmLevelUp) (global.get $rmLevelUp))
+      (return)
+    ))
+
+    (call $impossible [[s "You aren't ready to level up."]])
+  )
+
+  (func $applyStatsAction
+    (call $saveMode)
+    (call $setMode (global.get $gmStats) (global.get $rmStats))
   )
 
   [[reserve TileTypes sizeof_Tile*2 gTileTypes]]

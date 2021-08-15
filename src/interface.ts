@@ -1,18 +1,7 @@
 import mainUrl from "../build/code.wasm";
 import displayUrl from "../build/display.wasm";
 import stdlibUrl from "../build/stdlib.wasm";
-import {
-  makeAIComponent,
-  makeAppearanceComponent,
-  makeCarriedComponent,
-  makeConsumableComponent,
-  makeFighterComponent,
-  makeInventoryComponent,
-  makeItemComponent,
-  makePlayerComponent,
-  makePositionComponent,
-  makeSolidComponent,
-} from "./components";
+import { makeAllComponents } from "./components";
 import Display from "./Display";
 import Persistence from "./Persistence";
 import { RComponent, REntity, RLogMessage, RTileType } from "./types";
@@ -56,6 +45,8 @@ interface MainModule {
   gConsumables: WebAssembly.Global;
   Mask_Inventory: WebAssembly.Global;
   gInventories: WebAssembly.Global;
+  Mask_Level: WebAssembly.Global;
+  gLevels: WebAssembly.Global;
   Mask_Fighter: WebAssembly.Global;
   gFighters: WebAssembly.Global;
   Mask_Position: WebAssembly.Global;
@@ -77,6 +68,7 @@ interface MainModule {
   gEntitySize: WebAssembly.Global;
   gMaxEntities: WebAssembly.Global;
   gNextEntity: WebAssembly.Global;
+  gLastEntity: WebAssembly.Global;
 
   gPlayerID: WebAssembly.Global;
   gTileTypeCount: WebAssembly.Global;
@@ -92,7 +84,7 @@ interface MainModule {
 
   memory: WebAssembly.Memory;
 
-  initialise(w: number, h: number): void;
+  initialise(w: number, h: number, sh: number): void;
   hover(x: number, y: number): void;
   input(code: number, mod: number): boolean;
   loadFailed(): void;
@@ -105,7 +97,7 @@ export class WasmInterface {
   displayChars: DataView;
   displayFg: DataView;
   displayBg: DataView;
-  entities: DataView;
+  entityView: DataView;
   maxEntities: number;
   map: DataView;
   output?: Display;
@@ -119,7 +111,7 @@ export class WasmInterface {
     this.displayChars = new DataView(empty);
     this.displayFg = new DataView(empty);
     this.displayBg = new DataView(empty);
-    this.entities = new DataView(empty);
+    this.entityView = new DataView(empty);
     this.maxEntities = 0;
     this.map = new DataView(empty);
     this.raw = new DataView(empty);
@@ -184,7 +176,7 @@ export class WasmInterface {
   }
 
   entity(id: number): REntity {
-    const mask = this.entities.getBigUint64(
+    const mask = this.entityView.getBigUint64(
       id * this.main.gEntitySize.value,
       true
     );
@@ -194,6 +186,12 @@ export class WasmInterface {
       if (mask & component.mask) component.add(e);
 
     return e;
+  }
+
+  entities(): REntity[] {
+    return range(this.main.gLastEntity.value + 1)
+      .map((id) => this.entity(id))
+      .filter((e) => Object.keys(e).length > 1);
   }
 
   private tt(id: number): RTileType {
@@ -213,9 +211,9 @@ export class WasmInterface {
   }
 
   initialise(width: number, height: number): void {
-    this.main.initialise(width, height);
+    this.main.initialise(width, height, 5);
     this.maxEntities = this.main.gMaxEntities.value;
-    this.entities = this.mainMem(
+    this.entityView = this.mainMem(
       this.main.gEntities.value,
       this.main.gEntitySize.value * this.maxEntities
     );
@@ -237,18 +235,7 @@ export class WasmInterface {
       this.tt(id)
     );
 
-    this.components = [
-      makeAIComponent(this),
-      makeAppearanceComponent(this),
-      makeCarriedComponent(this),
-      makeConsumableComponent(this),
-      makeFighterComponent(this),
-      makeInventoryComponent(this),
-      makeItemComponent(this),
-      makePlayerComponent(this),
-      makePositionComponent(this),
-      makeSolidComponent(this),
-    ];
+    this.components = makeAllComponents(this);
   }
 
   refresh(): void {

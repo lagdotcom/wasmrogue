@@ -2,7 +2,7 @@ import DataComponent from "./DataComponent";
 import { WasmInterface } from "./interface";
 import TagComponent from "./TagComponent";
 
-export const makeAppearanceComponent = (i: WasmInterface) =>
+const appearance = (i: WasmInterface) =>
   new DataComponent(
     i,
     "Appearance",
@@ -17,7 +17,7 @@ export const makeAppearanceComponent = (i: WasmInterface) =>
     })
   );
 
-export const makeAIComponent = (i: WasmInterface) =>
+const ai = (i: WasmInterface) =>
   new DataComponent(
     i,
     "AI",
@@ -31,7 +31,7 @@ export const makeAIComponent = (i: WasmInterface) =>
     })
   );
 
-export const makeCarriedComponent = (i: WasmInterface) =>
+const carried = (i: WasmInterface) =>
   new DataComponent(
     i,
     "Carried",
@@ -43,7 +43,7 @@ export const makeCarriedComponent = (i: WasmInterface) =>
     })
   );
 
-export const makeConsumableComponent = (i: WasmInterface) =>
+const consumable = (i: WasmInterface) =>
   new DataComponent(
     i,
     "Consumable",
@@ -58,22 +58,23 @@ export const makeConsumableComponent = (i: WasmInterface) =>
     })
   );
 
-export const makeFighterComponent = (i: WasmInterface) =>
+const fighter = (i: WasmInterface) =>
   new DataComponent(
     i,
     "Fighter",
     i.main.Mask_Fighter.value,
     i.main.gFighters.value,
-    16,
+    8,
     (mem) => ({
-      maxHp: mem.getUint32(0, true),
-      hp: mem.getInt32(4, true),
-      defence: mem.getUint32(8, true),
-      power: mem.getUint32(12, true),
+      maxHp: mem.getUint8(0),
+      hp: mem.getInt8(1),
+      defence: mem.getUint8(2),
+      power: mem.getUint8(3),
+      xp: mem.getUint32(4),
     })
   );
 
-export const makeInventoryComponent = (i: WasmInterface) =>
+const inventory = (i: WasmInterface) =>
   new DataComponent(
     i,
     "Inventory",
@@ -85,7 +86,22 @@ export const makeInventoryComponent = (i: WasmInterface) =>
     })
   );
 
-export const makePositionComponent = (i: WasmInterface) =>
+const level = (i: WasmInterface) =>
+  new DataComponent(
+    i,
+    "Level",
+    i.main.Mask_Level.value,
+    i.main.gLevels.value,
+    7,
+    (mem) => ({
+      level: mem.getUint8(0),
+      formulaBase: mem.getUint8(1),
+      formulaFactor: mem.getUint8(2),
+      xp: mem.getUint32(3, true),
+    })
+  );
+
+const position = (i: WasmInterface) =>
   new DataComponent(
     i,
     "Position",
@@ -98,11 +114,27 @@ export const makePositionComponent = (i: WasmInterface) =>
     })
   );
 
-export const makeItemComponent = (i: WasmInterface) =>
+const item = (i: WasmInterface) =>
   new TagComponent(i, "Item", i.main.Mask_Item.value);
 
-export const makePlayerComponent = (i: WasmInterface) =>
+const player = (i: WasmInterface) =>
   new TagComponent(i, "Player", i.main.Mask_Player.value);
 
-export const makeSolidComponent = (i: WasmInterface) =>
+const solid = (i: WasmInterface) =>
   new TagComponent(i, "Solid", i.main.Mask_Solid.value);
+
+const allComponents = [
+  ai,
+  appearance,
+  carried,
+  consumable,
+  fighter,
+  inventory,
+  item,
+  level,
+  player,
+  position,
+  solid,
+];
+export const makeAllComponents = (i: WasmInterface) =>
+  allComponents.map((fn) => fn(i));
