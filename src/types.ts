@@ -38,10 +38,18 @@ export interface RFighter {
   hp: number;
   defence: number;
   power: number;
+  xp: number;
 }
 
 export interface RInventory {
   size: number;
+}
+
+export interface RLevel {
+  level: number;
+  formulaBase: number;
+  formulaFactor: number;
+  xp: number;
 }
 
 export interface RPosition {
@@ -58,6 +66,7 @@ export interface REntity {
   Fighter?: RFighter;
   Inventory?: RInventory;
   Item?: boolean;
+  Level?: RLevel;
   Position?: RPosition;
   Player?: boolean;
   Solid?: boolean;

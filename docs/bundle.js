@@ -39,6 +39,7 @@
         wglt.exports.Keys.VK_PAGE_DOWN,
         wglt.exports.Keys.VK_END,
         wglt.exports.Keys.VK_HOME,
+        wglt.exports.Keys.VK_ADD,
         wglt.exports.Keys.VK_F5,
         wglt.exports.Keys.VK_SLASH,
     ];
@@ -164,42 +165,63 @@
         }
     }
 
-    const makeAppearanceComponent = (i) => new DataComponent(i, "Appearance", i.main.Mask_Appearance.value, i.main.gAppearances.value, 10, (mem) => ({
+    const appearance = (i) => new DataComponent(i, "Appearance", i.main.Mask_Appearance.value, i.main.gAppearances.value, 10, (mem) => ({
         ch: mem.getUint8(0),
         layer: mem.getUint8(1),
         fg: mem.getUint32(2, true),
         name: i.string(mem.getUint32(6, true)),
     }));
-    const makeAIComponent = (i) => new DataComponent(i, "AI", i.main.Mask_AI.value, i.main.gAIs.value, 3, (mem) => ({
+    const ai = (i) => new DataComponent(i, "AI", i.main.Mask_AI.value, i.main.gAIs.value, 3, (mem) => ({
         fn: mem.getUint8(0),
         chain: mem.getUint8(1),
         duration: mem.getUint8(2),
     }));
-    const makeCarriedComponent = (i) => new DataComponent(i, "Carried", i.main.Mask_Carried.value, i.main.gCarrieds.value, 1, (mem) => ({
+    const carried = (i) => new DataComponent(i, "Carried", i.main.Mask_Carried.value, i.main.gCarrieds.value, 1, (mem) => ({
         carrier: mem.getUint8(0),
     }));
-    const makeConsumableComponent = (i) => new DataComponent(i, "Consumable", i.main.Mask_Consumable.value, i.main.gConsumables.value, 4, (mem) => ({
+    const consumable = (i) => new DataComponent(i, "Consumable", i.main.Mask_Consumable.value, i.main.gConsumables.value, 4, (mem) => ({
         fn: mem.getUint8(0),
         power: mem.getUint8(1),
         range: mem.getUint8(2),
         radius: mem.getUint8(3),
     }));
-    const makeFighterComponent = (i) => new DataComponent(i, "Fighter", i.main.Mask_Fighter.value, i.main.gFighters.value, 16, (mem) => ({
-        maxHp: mem.getUint32(0, true),
-        hp: mem.getInt32(4, true),
-        defence: mem.getUint32(8, true),
-        power: mem.getUint32(12, true),
+    const fighter = (i) => new DataComponent(i, "Fighter", i.main.Mask_Fighter.value, i.main.gFighters.value, 8, (mem) => ({
+        maxHp: mem.getUint8(0),
+        hp: mem.getInt8(1),
+        defence: mem.getUint8(2),
+        power: mem.getUint8(3),
+        xp: mem.getUint32(4),
     }));
-    const makeInventoryComponent = (i) => new DataComponent(i, "Inventory", i.main.Mask_Inventory.value, i.main.gInventories.value, 1, (mem) => ({
+    const inventory = (i) => new DataComponent(i, "Inventory", i.main.Mask_Inventory.value, i.main.gInventories.value, 1, (mem) => ({
         size: mem.getUint8(0),
     }));
-    const makePositionComponent = (i) => new DataComponent(i, "Position", i.main.Mask_Position.value, i.main.gPositions.value, 2, (mem) => ({
+    const level = (i) => new DataComponent(i, "Level", i.main.Mask_Level.value, i.main.gLevels.value, 7, (mem) => ({
+        level: mem.getUint8(0),
+        formulaBase: mem.getUint8(1),
+        formulaFactor: mem.getUint8(2),
+        xp: mem.getUint32(3, true),
+    }));
+    const position = (i) => new DataComponent(i, "Position", i.main.Mask_Position.value, i.main.gPositions.value, 2, (mem) => ({
         x: mem.getUint8(0),
         y: mem.getUint8(1),
     }));
-    const makeItemComponent = (i) => new TagComponent(i, "Item", i.main.Mask_Item.value);
-    const makePlayerComponent = (i) => new TagComponent(i, "Player", i.main.Mask_Player.value);
-    const makeSolidComponent = (i) => new TagComponent(i, "Solid", i.main.Mask_Solid.value);
+    const item = (i) => new TagComponent(i, "Item", i.main.Mask_Item.value);
+    const player = (i) => new TagComponent(i, "Player", i.main.Mask_Player.value);
+    const solid = (i) => new TagComponent(i, "Solid", i.main.Mask_Solid.value);
+    const allComponents = [
+        ai,
+        appearance,
+        carried,
+        consumable,
+        fighter,
+        inventory,
+        item,
+        level,
+        player,
+        position,
+        solid,
+    ];
+    const makeAllComponents = (i) => allComponents.map((fn) => fn(i));
 
     class WasmInterface {
         display;
@@ -208,7 +230,7 @@
         displayChars;
         displayFg;
         displayBg;
-        entities;
+        entityView;
         maxEntities;
         map;
         output;
@@ -223,7 +245,7 @@
             this.displayChars = new DataView(empty);
             this.displayFg = new DataView(empty);
             this.displayBg = new DataView(empty);
-            this.entities = new DataView(empty);
+            this.entityView = new DataView(empty);
             this.maxEntities = 0;
             this.map = new DataView(empty);
             this.raw = new DataView(empty);
@@ -278,16 +300,21 @@
             }
         }
         entity(id) {
-            const mask = this.entities.getBigUint64(id * this.main.gEntitySize.value, true);
+            const mask = this.entityView.getBigUint64(id * this.main.gEntitySize.value, true);
             const e = { id };
             for (const component of this.components)
                 if (mask & component.mask)
                     component.add(e);
             return e;
         }
+        entities() {
+            return range(this.main.gLastEntity.value + 1)
+                .map((id) => this.entity(id))
+                .filter((e) => Object.keys(e).length > 1);
+        }
         tt(id) {
             const tSize = this.main.gTileTypeSize.value;
-            const offset = id * tSize;
+            const offset = this.main.gTileTypes.value + id * tSize;
             const mem = this.mainMem(offset, tSize);
             return {
                 walkable: mem.getUint8(0) !== 0,
@@ -300,27 +327,16 @@
             };
         }
         initialise(width, height) {
-            this.main.initialise(width, height);
+            this.main.initialise(width, height, 5);
             this.maxEntities = this.main.gMaxEntities.value;
-            this.entities = this.mainMem(this.main.gEntities.value, this.main.gEntitySize.value * this.maxEntities);
+            this.entityView = this.mainMem(this.main.gEntities.value, this.main.gEntitySize.value * this.maxEntities);
             this.map = this.mainMem(this.main.gMap.value, this.mapSize);
             this.displayChars = this.displayMem(this.display.chars.value, this.displaySize);
             this.displayFg = this.displayMem(this.display.fg.value, this.displaySize * 4);
             this.displayBg = this.displayMem(this.display.bg.value, this.displaySize * 4);
             this.raw = new DataView(this.main.memory.buffer);
             this.tileTypes = range(this.main.gTileTypeCount.value).map((id) => this.tt(id));
-            this.components = [
-                makeAIComponent(this),
-                makeAppearanceComponent(this),
-                makeCarriedComponent(this),
-                makeConsumableComponent(this),
-                makeFighterComponent(this),
-                makeInventoryComponent(this),
-                makeItemComponent(this),
-                makePlayerComponent(this),
-                makePositionComponent(this),
-                makeSolidComponent(this),
-            ];
+            this.components = makeAllComponents(this);
         }
         refresh() {
             if (this.output)

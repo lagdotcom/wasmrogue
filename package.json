@@ -1,6 +1,6 @@
 {
   "name": "wasmrogue",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "WASM rogue!",
   "main": "index.js",
   "scripts": {
@@ -8,8 +8,9 @@
     "wasm:watch": "watch \"npm run make\" assembly",
     "make": "jake",
     "rollup": "rollup -c",
-    "watch": "rollup -cw",
-    "build": "npm run make && npm run rollup"
+    "build": "npm run make && npm run rollup",
+    "start": "rollup -cw",
+    "watch": "rollup -cw"
   },
   "author": "Lag.Com <lagdotcom@gmail.com>",
   "license": "ISC",
