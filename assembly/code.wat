@@ -140,6 +140,8 @@
   (global $targetY (mut i32) (i32.const 0))
 
   [[struct Tile walkable:u8 transparent:u8 ch:u8 fg:i32 bg:i32 fglight:i32 bglight:i32]]
+  [[struct FValue floor:u8 value:u8]]
+  [[struct FChance floor:u8 value:u8 chance:u8]]
 
   [[struct Entity mask:i64]]
   (global $maxEntities (export "gMaxEntities") i32 (i32.const 256))
@@ -168,8 +170,6 @@
   (global $maxRoomSize i32 (i32.const 10))
   (global $minRoomSize i32 (i32.const 6))
   (global $maxRooms i32 (i32.const 32))
-  (global $maxMonstersPerRoom i32 (i32.const 2))
-  (global $maxItemsPerRoom i32 (i32.const 1))
 
   (global $actionID (mut i32) (i32.const 0))
   (global $actionCallback (mut i32) (i32.const 0))
@@ -669,11 +669,11 @@
     (local.set $r (call $getRoom (local.get $rid)))
     (call $placeMonsters
       (local.get $r)
-      (call $rng (i32.const 0) (global.get $maxMonstersPerRoom))
+      (call $rng (i32.const 0) (call $getMaxValueForFloor (global.get $MaxMonstersByFloor) (global.get $currentFloor)))
     )
     (call $placeItems
       (local.get $r)
-      (call $rng (i32.const 0) (global.get $maxItemsPerRoom))
+      (call $rng (i32.const 0) (call $getMaxValueForFloor (global.get $MaxItemsByFloor) (global.get $currentFloor)))
     )
   )
 
@@ -994,12 +994,22 @@
     $applyFireballItem
     $applyHealingItem
     $applyLightningItem
+
+    $constructOrc
+    $constructTroll
+
+    $constructHealingPotion
+    $constructConfusionScroll
+    $constructLightningScroll
+    $constructFireballScroll
   ))
   [[consts act 0 None Bump Confirm Drop Dungeon Generate History Inventory LevelUp Look Melee Move Pickup Stairs Stats Use Wait]]
   [[consts ai _Next None Hostile Confused]]
   [[consts gm _Next MainMenu Dungeon Dead History Inventory LevelUp Popup Stats Targeting]]
   [[consts rm _Next MainMenu Dungeon History Inventory LevelUp Popup Stats Targeting]]
   [[consts it _Next Confusion Fireball Healing Lightning]]
+  [[consts cm _Next Orc Troll]]
+  [[consts ci _Next HealingPotion ConfusionScroll LightningScroll FireballScroll]]
 
   (func $applyNoAction)
   (func $applyWaitAction
@@ -1704,27 +1714,27 @@
 
     (local.set $roll (call $rng (i32.const 0) (i32.const 99)))
 
-    (local.set $eid (call $spawnEntity))
-    (call $setSolid (local.get $eid))
-    [[attach $eid Position x=$x y=$y]]
+    (global.set $currentEntity (call $spawnEntity))
+    (call $setSolid (global.get $currentEntity))
+    [[attach $currentEntity Position x=$x y=$y]]
 
     (if (i32.le_u (local.get $roll) (i32.const 80)) (then
-      (call $constructOrc (local.get $eid))
+      (call $constructOrc)
       (return)
     ))
 
-    (call $constructTroll (local.get $eid))
+    (call $constructTroll)
   )
 
-  (func $constructOrc (param $eid i32)
-    [[attach $eid Appearance ch='o' colour=cOrc layer=layerActor name="Orc"]]
-    [[attach $eid AI fn=$aiHostile]]
-    [[attach $eid Fighter maxhp=10 hp=10 defence=0 power=3 xp=35]]
+  (func $constructOrc
+    [[attach $currentEntity Appearance ch='o' colour=cOrc layer=layerActor name="Orc"]]
+    [[attach $currentEntity AI fn=$aiHostile]]
+    [[attach $currentEntity Fighter maxhp=10 hp=10 defence=0 power=3 xp=35]]
   )
-  (func $constructTroll (param $eid i32)
-    [[attach $eid Appearance ch='T' colour=cTroll layer=layerActor name="Troll"]]
-    [[attach $eid AI fn=$aiHostile]]
-    [[attach $eid Fighter maxhp=16 hp=16 defence=1 power=4 xp=100]]
+  (func $constructTroll
+    [[attach $currentEntity Appearance ch='T' colour=cTroll layer=layerActor name="Troll"]]
+    [[attach $currentEntity AI fn=$aiHostile]]
+    [[attach $currentEntity Fighter maxhp=16 hp=16 defence=1 power=4 xp=100]]
   )
 
   (func $spawnItemAt (param $x i32) (param $y i32)
@@ -1733,43 +1743,43 @@
 
     (local.set $roll (call $rng (i32.const 0) (i32.const 99)))
 
-    (local.set $eid (call $spawnEntity))
-    (call $setItem (local.get $eid))
-    [[attach $eid Position x=$x y=$y]]
+    (global.set $currentEntity (call $spawnEntity))
+    (call $setItem (global.get $currentEntity))
+    [[attach $currentEntity Position x=$x y=$y]]
 
     (if (i32.le_u (local.get $roll) (i32.const 70)) (then
-      (call $constructHealingPotion (local.get $eid))
+      (call $constructHealingPotion)
       (return)
     ))
 
     (if (i32.le_u (local.get $roll) (i32.const 80)) (then
-      (call $constructFireballScroll (local.get $eid))
+      (call $constructFireballScroll)
       (return)
     ))
 
     (if (i32.le_u (local.get $roll) (i32.const 90)) (then
-      (call $constructConfusionScroll (local.get $eid))
+      (call $constructConfusionScroll)
       (return)
     ))
 
-    (call $constructLightningScroll (local.get $eid))
+    (call $constructLightningScroll)
   )
 
-  (func $constructHealingPotion (param $eid i32)
-    [[attach $eid Appearance ch='!' colour=cHealingPotion layer=layerItem name=[[s "Healing Potion"]]]]
-    [[attach $eid Consumable fn=$itHealing power=4]]
+  (func $constructHealingPotion
+    [[attach $currentEntity Appearance ch='!' colour=cHealingPotion layer=layerItem name=[[s "Healing Potion"]]]]
+    [[attach $currentEntity Consumable fn=$itHealing power=4]]
   )
-  (func $constructLightningScroll (param $eid i32)
-    [[attach $eid Appearance ch='~' colour=cLightningScroll layer=layerItem name=[[s "Lightning Scroll"]]]]
-    [[attach $eid Consumable fn=$itLightning power=20 range=5]]
+  (func $constructLightningScroll
+    [[attach $currentEntity Appearance ch='~' colour=cLightningScroll layer=layerItem name=[[s "Lightning Scroll"]]]]
+    [[attach $currentEntity Consumable fn=$itLightning power=20 range=5]]
   )
-  (func $constructConfusionScroll (param $eid i32)
-    [[attach $eid Appearance ch='~' colour=cConfusionScroll layer=layerItem name=[[s "Confusion Scroll"]]]]
-    [[attach $eid Consumable fn=$itConfusion power=10]]
+  (func $constructConfusionScroll
+    [[attach $currentEntity Appearance ch='~' colour=cConfusionScroll layer=layerItem name=[[s "Confusion Scroll"]]]]
+    [[attach $currentEntity Consumable fn=$itConfusion power=10]]
   )
-  (func $constructFireballScroll (param $eid i32)
-    [[attach $eid Appearance ch='~' colour=cRed layer=layerItem name=[[s "Fireball Scroll"]]]]
-    [[attach $eid Consumable fn=$itFireball power=12 radius=3]]
+  (func $constructFireballScroll
+    [[attach $currentEntity Appearance ch='~' colour=cRed layer=layerItem name=[[s "Fireball Scroll"]]]]
+    [[attach $currentEntity Consumable fn=$itFireball power=12 radius=3]]
   )
 
   (func $constructPlayer (param $eid i32)
@@ -3180,7 +3190,22 @@
     (call $setMode (global.get $gmStats) (global.get $rmStats))
   )
 
-  [[reserve TileTypes sizeof_Tile*2 gTileTypes]]
+  (func $getMaxValueForFloor (param $data i32) (param $floor i32) (result i32)
+    (local $current i32)
+
+    (loop $loader
+      (if (i32.gt_u [[load $data FValue.floor]] (local.get $floor))
+        (return (local.get $current))
+      )
+
+      (local.set $current [[load $data FValue.value]])
+      (local.set $data (i32.add (local.get $data) [[= sizeof_FValue]]))
+      (br $loader)
+    )
+    (unreachable)
+  )
+
+  [[reserve TileTypes sizeof_Tile*3 gTileTypes]]
   (data $tileTypeData (offset [[= TileTypes]])
     [[data Tile ch='.' fg=cWhite bg=cFloorDark fglight=cWhite bglight=cFloorLight walkable=1 transparent=1]]
     [[data Tile ch='#' fg=cWhite bg=cWallDark fglight=cWhite bglight=cWallBright]]
@@ -3189,6 +3214,39 @@
   [[consts tt 0 Floor Wall Exit]]
   (global $ttINVALID (export "gTileTypeCount") i32 [[= _Next]])
   (global $tileTypeSize (export "gTileTypeSize") i32 [[= sizeof_Tile]])
+
+  [[reserve MaxItemsByFloor sizeof_FValue*3 gMaxItemsByFloor]]
+  (data $maxItemsData (offset [[= MaxItemsByFloor]])
+    [[data FValue floor=1 value=1]]
+    [[data FValue floor=4 value=2]]
+    [[data FValue floor=255]]
+  )
+
+  [[reserve MaxMonstersByFloor sizeof_FValue*4 gMaxMonstersByFloor]]
+  (data $maxMonstersData (offset [[= MaxMonstersByFloor]])
+    [[data FValue floor=1 value=2]]
+    [[data FValue floor=4 value=3]]
+    [[data FValue floor=6 value=5]]
+    [[data FValue floor=255]]
+  )
+
+  [[reserve ItemChances sizeof_FChance*5 gItemChances]]
+  (data $itemChances (offset [[= ItemChances]])
+    [[data FChance floor=0 value=ciHealingPotion chance=35]]
+    [[data FChance floor=2 value=ciConfusionScroll chance=10]]
+    [[data FChance floor=4 value=ciLightningScroll chance=25]]
+    [[data FChance floor=6 value=ciFireballScroll chance=25]]
+    [[data FChance floor=255]]
+  )
+
+  [[reserve MonsterChances sizeof_FChance*5 gMonsterChances]]
+  (data $monsterChances (offset [[= MonsterChances]])
+    [[data FChance floor=0 value=cmOrc chance=80]]
+    [[data FChance floor=3 value=cmTroll chance=15]]
+    [[data FChance floor=5 value=cmTroll chance=30]]
+    [[data FChance floor=7 value=cmTroll chance=60]]
+    [[data FChance floor=255]]
+  )
 
   (data $stringData (offset [[= Strings]]) [[strings]])
   [[memory memory]]
