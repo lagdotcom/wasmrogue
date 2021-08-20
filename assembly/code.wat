@@ -1709,21 +1709,11 @@
   )
 
   (func $spawnEnemyAt (param $x i32) (param $y i32)
-    (local $roll i32)
-    (local $eid i32)
-
-    (local.set $roll (call $rng (i32.const 0) (i32.const 99)))
-
     (global.set $currentEntity (call $spawnEntity))
     (call $setSolid (global.get $currentEntity))
     [[attach $currentEntity Position x=$x y=$y]]
 
-    (if (i32.le_u (local.get $roll) (i32.const 80)) (then
-      (call $constructOrc)
-      (return)
-    ))
-
-    (call $constructTroll)
+    (call_indirect (call $getWeightedValueForFloor (global.get $MonsterChances) (global.get $currentFloor)))
   )
 
   (func $constructOrc
@@ -1738,31 +1728,11 @@
   )
 
   (func $spawnItemAt (param $x i32) (param $y i32)
-    (local $roll i32)
-    (local $eid i32)
-
-    (local.set $roll (call $rng (i32.const 0) (i32.const 99)))
-
     (global.set $currentEntity (call $spawnEntity))
     (call $setItem (global.get $currentEntity))
     [[attach $currentEntity Position x=$x y=$y]]
 
-    (if (i32.le_u (local.get $roll) (i32.const 70)) (then
-      (call $constructHealingPotion)
-      (return)
-    ))
-
-    (if (i32.le_u (local.get $roll) (i32.const 80)) (then
-      (call $constructFireballScroll)
-      (return)
-    ))
-
-    (if (i32.le_u (local.get $roll) (i32.const 90)) (then
-      (call $constructConfusionScroll)
-      (return)
-    ))
-
-    (call $constructLightningScroll)
+    (call_indirect (call $getWeightedValueForFloor (global.get $ItemChances) (global.get $currentFloor)))
   )
 
   (func $constructHealingPotion
@@ -3201,6 +3171,48 @@
       (local.set $current [[load $data FValue.value]])
       (local.set $data (i32.add (local.get $data) [[= sizeof_FValue]]))
       (br $loader)
+    )
+    (unreachable)
+  )
+
+  (func $getFChanceTotal (param $data i32) (param $floor i32) (result i32)
+    (local $total i32)
+
+    ;; total = 0
+    ;; foreach fchance in data:
+    (loop $chances
+      ;; if fchance.floor > floor: return total
+      (if (i32.gt_u [[load $data FChance.floor]] (local.get $floor))
+        (return (local.get $total))
+      )
+
+      ;; total += fchance.chance
+      (local.set $total (i32.add (local.get $total) [[load $data FChance.chance]]))
+      (local.set $data (i32.add (local.get $data) [[= sizeof_FChance]]))
+
+      (br $chances)
+    )
+    (unreachable)
+  )
+
+  (func $getWeightedValueForFloor (param $data i32) (param $floor i32) (result i32)
+    (local $roll i32)
+
+    ;; roll = rng(1, total)
+    (local.set $roll (call $rng (i32.const 1) (call $getFChanceTotal (local.get $data) (local.get $floor))))
+
+    ;; foreach fchance in data:
+    (loop $chances
+      ;; if roll <= fchance.chance: return fchance.value
+      (if (i32.le_u (local.get $roll) [[load $data FChance.chance]])
+        (return [[load $data FChance.value]])
+      )
+
+      ;; roll -= fchance.chance
+      (local.set $roll (i32.sub (local.get $roll) [[load $data FChance.chance]]))
+      (local.set $data (i32.add (local.get $data) [[= sizeof_FChance]]))
+
+      (br $chances)
     )
     (unreachable)
   )
