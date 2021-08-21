@@ -33,6 +33,17 @@ export interface RConsumable {
   radius: number;
 }
 
+export interface REquipment {
+  weapon: number;
+  armour: number;
+}
+
+export interface REquippable {
+  slot: number;
+  power: number;
+  defence: number;
+}
+
 export interface RFighter {
   maxHp: number;
   hp: number;
@@ -63,6 +74,8 @@ export interface REntity {
   AI?: RAI;
   Carried?: RCarried;
   Consumable?: RConsumable;
+  Equipment?: REquipment;
+  Equippable?: REquippable;
   Fighter?: RFighter;
   Inventory?: RInventory;
   Item?: boolean;

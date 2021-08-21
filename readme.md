@@ -67,35 +67,46 @@ My memory layout is dynamic because my preprocessor handles it. Here's what is i
 
 #### Main Memory
 
-| Start | Size        | Description      |
-| ----- | ----------- | ---------------- |
-| 0     | 16          | (savefile start) |
-| 16    | 256\*8      | Entity data      |
-| 2064  | 256\*10     | Appearance data  |
-| 4624  | 256\*3      | AI data          |
-| 5392  | 256\*1      | Carried data     |
-| 5648  | 256\*4      | Consumable data  |
-| 6672  | 256\*16     | Fighter data     |
-| 10768 | 256\*1      | Inventory data   |
-| 11024 | 256\*2      | Position data    |
-| 11536 | 32\*4       | Room data        |
-| 11664 | 100\*100    | TileMap          |
-| 21664 | 100\*100    | VisibleMap       |
-| 31664 | 100\*100    | KnownMap         |
-| 41664 | 100\*100    | PathMap          |
-| 51664 | 105\*100    | message log      |
-| 62164 | -           | (savefile end)   |
-| 62164 | 1000        | Strings          |
-| 66164 | 100         | temp string      |
-| 66264 | 20          | temp (itoa)      |
-| 66284 | 100         | temp (hover)     |
-| 66384 | 100\*100\*2 | dijkstra queue   |
-| 86384 | 19\*2       | Tile types       |
-| 86424 | -           | -                |
+| Start | Size        | Description        |
+| ----- | ----------- | ------------------ |
+| 0     | 16          | (savefile start)   |
+| 16    | 256\*8      | Entity data        |
+| 2064  | 256\*10     | Appearance data    |
+| 4624  | 256\*3      | AI data            |
+| 5392  | 256\*1      | Carried data       |
+| 5648  | 256\*4      | Consumable data    |
+| 6672  | 256\*2      | Equipment data     |
+| 7184  | 256\*3      | Equippable data    |
+| 7952  | 256\*8      | Fighter data       |
+| 10000 | 256\*1      | Inventory data     |
+| 10256 | 256\*7      | Level data         |
+| 12048 | 256\*2      | Position data      |
+| 12560 | 32\*4       | Room data          |
+| 12688 | 100\*100    | TileMap            |
+| 22688 | 100\*100    | VisibleMap         |
+| 32688 | 100\*100    | ExploredMap        |
+| 42688 | 100\*100    | PathMap            |
+| 52688 | 105\*100    | message log        |
+| 63188 | -           | (savefile end)     |
+| 63188 | 1000        | Strings            |
+| 67188 | 100         | temp string        |
+| 67288 | 20          | temp (itoa)        |
+| 67308 | 100         | temp (hover)       |
+| 67408 | 100\*100\*2 | dijkstra queue     |
+| 87408 | 3\*19       | Tile types         |
+| 87465 | 3\*2        | Items per floor    |
+| 87471 | 4\*2        | Monsters per floor |
+| 87479 | 7\*3        | Item chances       |
+| 87494 | 5\*3        | Monster chances    |
+| 86424 | -           | -                  |
 
-So, my data currently fits in two WebAssembly memory pages (64kB each).
+So, my data (minus the display memory) currently fits in two WebAssembly memory pages (64kB each).
 
 ## Log
+
+### 2021-08-21
+
+Oh yeah, I was doing a log. The tutorial is all done now. This deserves a fuller write up at some point. :D
 
 ### 2021-08-09
 
