@@ -58,6 +58,33 @@ const consumable = (i: WasmInterface) =>
     })
   );
 
+const equipment = (i: WasmInterface) =>
+  new DataComponent(
+    i,
+    "Equipment",
+    i.main.Mask_Equipment.value,
+    i.main.gEquipments.value,
+    2,
+    (mem) => ({
+      weapon: mem.getUint8(0),
+      armour: mem.getUint8(1),
+    })
+  );
+
+const equippable = (i: WasmInterface) =>
+  new DataComponent(
+    i,
+    "Equippable",
+    i.main.Mask_Equippable.value,
+    i.main.gEquippables.value,
+    3,
+    (mem) => ({
+      slot: mem.getUint8(0),
+      power: mem.getUint8(1),
+      defence: mem.getUint8(2),
+    })
+  );
+
 const fighter = (i: WasmInterface) =>
   new DataComponent(
     i,
@@ -128,6 +155,8 @@ const allComponents = [
   appearance,
   carried,
   consumable,
+  equipment,
+  equippable,
   fighter,
   inventory,
   item,

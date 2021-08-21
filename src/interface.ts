@@ -45,6 +45,10 @@ interface MainModule {
   gConsumables: WebAssembly.Global;
   Mask_Inventory: WebAssembly.Global;
   gInventories: WebAssembly.Global;
+  Mask_Equipment: WebAssembly.Global;
+  gEquipments: WebAssembly.Global;
+  Mask_Equippable: WebAssembly.Global;
+  gEquippables: WebAssembly.Global;
   Mask_Level: WebAssembly.Global;
   gLevels: WebAssembly.Global;
   Mask_Fighter: WebAssembly.Global;

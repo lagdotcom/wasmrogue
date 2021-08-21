@@ -152,11 +152,14 @@
 
   [[consts align 0 Left Centre]]
   [[consts layer 0 Empty Corpse Item Actor]]
+  [[consts slot 0 Weapon Armour COUNT]]
 
   [[component Appearance ch:u8 layer:u8 colour:i32 name:i32]]
   [[component AI fn:u8 chain:u8 duration:u8]]
   [[component Carried carrier:u8]]
   [[component Consumable fn:u8 power:u8 range:u8 radius:u8]]
+  [[component Equipment weapon:u8 armour:u8]]
+  [[component Equippable slot:u8 power:u8 defence:u8]]
   [[component Fighter maxhp:u8 hp:s8 defence:u8 power:u8 xp:i32]]
   [[component Inventory size:u8]]
   [[component Level level:u8 formulaBase:u8 formulaFactor:u8 xp:i32]]
@@ -198,6 +201,8 @@
   [[reserve AIs maxEntities*sizeof_AI gAIs]]
   [[reserve Carrieds maxEntities*sizeof_Carried gCarrieds]]
   [[reserve Consumables maxEntities*sizeof_Consumable gConsumables]]
+  [[reserve Equipments maxEntities*sizeof_Equipment gEquipments]]
+  [[reserve Equippables maxEntities*sizeof_Equippable gEquippables]]
   [[reserve Fighters maxEntities*sizeof_Fighter gFighters]]
   [[reserve Inventorys maxEntities*sizeof_Inventory gInventories]]
   [[reserve Levels maxEntities*sizeof_Level gLevels]]
@@ -1002,6 +1007,11 @@
     $constructConfusionScroll
     $constructLightningScroll
     $constructFireballScroll
+
+    $constructDagger
+    $constructSword
+    $constructLeatherArmour
+    $constructChainMail
   ))
   [[consts act 0 None Bump Confirm Drop Dungeon Generate History Inventory LevelUp Look Melee Move Pickup Stairs Stats Use Wait]]
   [[consts ai _Next None Hostile Confused]]
@@ -1009,7 +1019,7 @@
   [[consts rm _Next MainMenu Dungeon History Inventory LevelUp Popup Stats Targeting]]
   [[consts it _Next Confusion Fireball Healing Lightning]]
   [[consts cm _Next Orc Troll]]
-  [[consts ci _Next HealingPotion ConfusionScroll LightningScroll FireballScroll]]
+  [[consts ci _Next HealingPotion ConfusionScroll LightningScroll FireballScroll Dagger Sword LeatherArmour ChainMail]]
 
   (func $applyNoAction)
   (func $applyWaitAction
@@ -1047,8 +1057,6 @@
     (local $me i32)
     (local $pos i32)
     (local $enemy i32)
-    (local $attacker i32)
-    (local $victim i32)
     (local $damage i32)
     (local $s i32)
     (local $fg i32)
@@ -1080,9 +1088,7 @@
       (local.set $fg (global.get $cEnemyAtk))
     )
 
-    (local.set $attacker (call $getFighter (local.get $me)))
-    (local.set $victim (call $getFighter (local.get $enemy)))
-    (local.set $damage (i32.sub [[load $attacker Fighter.power]] [[load $victim Fighter.defence]]))
+    (local.set $damage (i32.sub (call $getPower (local.get $me)) (call $getDefence (local.get $enemy))))
 
     (local.set $s (call $strcpy (global.get $tempString) (call $getName (local.get $me))))
     (local.set $s (call $strcpy (local.get $s) [[s " attacks "]]))
@@ -1752,18 +1758,190 @@
     [[attach $currentEntity Consumable fn=$itFireball power=12 radius=3]]
   )
 
-  (func $constructPlayer (param $eid i32)
-    (global.set $playerID (local.get $eid))
+  (func $constructDagger
+    [[attach $currentEntity Appearance ch='/' colour=0x00bfff00 layer=layerItem name=[[s "Dagger"]]]]
+    [[attach $currentEntity Equippable slot=slotWeapon power=2]]
+  )
+  (func $constructSword
+    [[attach $currentEntity Appearance ch='/' colour=0x00bfff00 layer=layerItem name=[[s "Sword"]]]]
+    [[attach $currentEntity Equippable slot=slotWeapon power=4]]
+  )
+  (func $constructLeatherArmour
+    [[attach $currentEntity Appearance ch='[' colour=0x88451300 layer=layerItem name=[[s "Leather Armour"]]]]
+    [[attach $currentEntity Equippable slot=slotArmour defence=1]]
+  )
+  (func $constructChainMail
+    [[attach $currentEntity Appearance ch='[' colour=0x88451300 layer=layerItem name=[[s "Chain Mail"]]]]
+    [[attach $currentEntity Equippable slot=slotArmour defence=3]]
+  )
 
+  (func $constructPlayer (param $eid i32)
+    (local $weapon i32)
+    (local $armour i32)
+
+    (global.set $currentEntity (local.tee $weapon (call $spawnEntity)))
+    (call $constructDagger)
+    (call $setItem (local.get $weapon))
+    [[attach $weapon Carried carrier=$eid]]
+
+    (global.set $currentEntity (local.tee $armour (call $spawnEntity)))
+    (call $constructLeatherArmour)
+    (call $setItem (local.get $armour))
+    [[attach $armour Carried carrier=$eid]]
+
+    (global.set $playerID (local.get $eid))
     (call $setPlayer (local.get $eid))
     (call $setSolid (local.get $eid))
     [[attach $eid Appearance ch='@' colour=cWhite layer=layerActor name="Player"]]
-    [[attach $eid Fighter maxhp=32 hp=32 defence=2 power=5]]
+    [[attach $eid Equipment weapon=$weapon armour=$armour]]
+    [[attach $eid Fighter maxhp=30 hp=30 defence=1 power=2]]
     [[attach $eid Inventory size=inventorySize]]
     [[attach $eid Level level=1 formulaBase=200 formulaFactor=150]]
   )
   (func $placePlayer (param $x i32) (param $y i32)
     [[attach $playerID Position x=$x y=$y]]
+  )
+
+  ;; TODO combine this with getDefenceBonus somehow?
+  (func $getPowerBonus (param $eid i32) (result i32)
+    (local $bonus i32)
+    (local $equipment i32)
+    (local $i i32)
+    (local $iid i32)
+    (local $eq i32)
+
+    (if (call $hasEquipment (local.get $eid)) (then
+      (local.set $equipment (call $getEquipment (local.get $eid)))
+      (loop $equipment
+        (if (local.tee $iid (i32.load8_u (i32.add (local.get $equipment) (local.get $i)))) (then
+          (local.set $eq (call $getEquippable (local.get $iid)))
+          (local.set $bonus (i32.add (local.get $bonus) [[load $eq Equippable.power]]))
+        ))
+
+        (br_if $equipment (i32.lt_u (local.tee $i (i32.add (local.get $i) (i32.const 1))) (global.get $slotCOUNT)))
+      )
+    ))
+
+    (local.get $bonus)
+  )
+  (func $getDefenceBonus (param $eid i32) (result i32)
+    (local $bonus i32)
+    (local $equipment i32)
+    (local $i i32)
+    (local $iid i32)
+    (local $eq i32)
+
+    (if (call $hasEquipment (local.get $eid)) (then
+      (local.set $equipment (call $getEquipment (local.get $eid)))
+      (loop $equipment
+        (if (local.tee $iid (i32.load8_u (i32.add (local.get $equipment) (local.get $i)))) (then
+          (local.set $eq (call $getEquippable (local.get $iid)))
+          (local.set $bonus (i32.add (local.get $bonus) [[load $eq Equippable.defence]]))
+        ))
+
+        (br_if $equipment (i32.lt_u (local.tee $i (i32.add (local.get $i) (i32.const 1))) (global.get $slotCOUNT)))
+      )
+    ))
+
+    (local.get $bonus)
+  )
+
+  (func $getPower (param $eid i32) (result i32)
+    (local $fighter i32)
+
+    (if (call $hasFighter (local.get $eid)) (then
+      (local.set $fighter (call $getFighter (local.get $eid)))
+      (return (i32.add [[load $fighter Fighter.power]] (call $getPowerBonus (local.get $eid))))
+    ))
+
+    (i32.const 0)
+  )
+  (func $getDefence (param $eid i32) (result i32)
+    (local $fighter i32)
+
+    (if (call $hasFighter (local.get $eid)) (then
+      (local.set $fighter (call $getFighter (local.get $eid)))
+      (return (i32.add [[load $fighter Fighter.defence]] (call $getDefenceBonus (local.get $eid))))
+    ))
+
+    (i32.const 0)
+  )
+
+  (func $isEquipped (param $eid i32) (param $iid i32) (result i32)
+    (local $equipment i32)
+    (local $eq i32)
+
+    (if (i32.eqz (call $hasEquipment (local.get $eid)))
+      (return (i32.const 0))
+    )
+    (if (i32.eqz (call $hasEquippable (local.get $iid)))
+      (return (i32.const 0))
+    )
+
+    (local.set $equipment (call $getEquipment (local.get $eid)))
+    (local.set $eq (call $getEquippable (local.get $iid)))
+    (i32.eq
+      (local.get $iid)
+      (i32.load8_u (i32.add (local.get $equipment) [[load $eq Equippable.slot]]))
+    )
+  )
+
+  (func $equipItem (param $eid i32) (param $iid i32)
+    (local $equipment i32)
+    (local $eq i32)
+    (local $slot i32)
+    (local $oid i32)
+    (local $s i32)
+
+    (if (call $isEquipped (local.get $eid) (local.get $iid)) (then
+      (call $impossible [[s "That's already equipped."]])
+      (return)
+    ))
+
+    (local.set $equipment (call $getEquipment (local.get $eid)))
+    (local.set $eq (call $getEquippable (local.get $iid)))
+    (local.set $slot (i32.add (local.get $equipment) [[load $eq Equippable.slot]]))
+
+    (if (local.tee $oid (i32.load8_u (local.get $slot)))
+      (call $unequipItem (local.get $eid) (local.get $oid))
+    )
+
+    (i32.store8 (local.get $slot) (local.get $iid))
+    (local.set $s (call $strcpy (global.get $tempString) [[s "You equip the "]]))
+    (local.set $s (call $strcpy (local.get $s) (call $getName (local.get $iid))))
+    (local.set $s (call $strcpy (local.get $s) [[s "."]]))
+    (call $addToLog (global.get $tempString) (global.get $cWhite))
+    (call $tick)
+  )
+
+  (func $unequipItem (param $eid i32) (param $iid i32)
+    (local $equipment i32)
+    (local $eq i32)
+    (local $slot i32)
+    (local $s i32)
+
+    (if (i32.eqz (call $isEquipped (local.get $eid) (local.get $iid))) (then
+      (call $impossible [[s "That's not equipped."]])
+      (return)
+    ))
+
+    (local.set $equipment (call $getEquipment (local.get $eid)))
+    (local.set $eq (call $getEquippable (local.get $iid)))
+    (local.set $slot (i32.add (local.get $equipment) [[load $eq Equippable.slot]]))
+
+    (i32.store8 (local.get $slot) (i32.const 0))
+    (local.set $s (call $strcpy (global.get $tempString) [[s "You remove the "]]))
+    (local.set $s (call $strcpy (local.get $s) (call $getName (local.get $iid))))
+    (local.set $s (call $strcpy (local.get $s) [[s "."]]))
+    (call $addToLog (global.get $tempString) (global.get $cWhite))
+    (call $tick)
+  )
+
+  (func $toggleItemEquip (param $eid i32) (param $iid i32)
+    (if (call $isEquipped (local.get $eid) (local.get $iid))
+      (call $unequipItem (local.get $eid) (local.get $iid))
+      (call $equipItem (local.get $eid) (local.get $iid))
+    )
   )
 
   [[system RenderEntity Appearance Position]]
@@ -2097,6 +2275,7 @@
     (local $y i32)
     (local $w i32)
     (local $h i32)
+    (local $iid i32)
 
     (call $applyDungeonRender)
     (call $fadeOut (i32.const 8))
@@ -2124,7 +2303,18 @@
     (local.set $y (i32.add (local.get $y) (i32.const 1)))
     (loop $items
       (local.set $s (call $strcpy (global.get $tempString) [[s " ) "]]))
-      (local.set $s (call $strcpy (local.get $s) (call $getName (call $getInventoryItem (global.get $playerID) (local.get $i)))))
+      (local.set $s (call $strcpy (local.get $s)
+        (call $getName
+          (local.tee $iid
+            (call $getInventoryItem (global.get $playerID) (local.get $i))
+          )
+        )
+      ))
+
+      (if (call $isEquipped (global.get $playerID) (local.get $iid))
+        (local.set $s (call $strcpy (local.get $s) [[s " (E)"]]))
+      )
+
       ;; overwrite first char with selection char
       (i32.store8 (global.get $tempString) (i32.add (local.get $i) [[= 'A']]))
       (call $putsFg (global.get $tempString) (local.get $x) (local.tee $y (i32.add (local.get $y) (i32.const 1))) (global.get $cWhite) (global.get $alignLeft))
@@ -2210,6 +2400,14 @@
     )
   )
 
+  (func $addBonusString (param $s i32) (param $bonus i32)
+    (if (i32.eqz (local.get $bonus)) (return))
+
+    (local.set $s (call $strcpy (local.get $s) [[s " [+"]]))
+    (local.set $s (call $strcpy (local.get $s) (call $itoa (local.get $bonus))))
+    (local.set $s (call $strcpy (local.get $s) [[s "]"]]))
+  )
+
   (func $applyStatsRender
     (local $i i32)
     (local $s i32)
@@ -2273,6 +2471,7 @@
 
     (local.set $s (call $strcpy (global.get $tempString) [[s "Attack: "]]))
     (local.set $s (call $strcpy (local.get $s) (call $itoa [[load $fighter Fighter.power]])))
+    (call $addBonusString (local.get $s) (call $getPowerBonus (global.get $playerID)))
     (call $putsFgBg (global.get $tempString)
       (local.get $x)
       (local.tee $y (i32.add (local.get $y) (i32.const 1)))
@@ -2281,6 +2480,7 @@
 
     (local.set $s (call $strcpy (global.get $tempString) [[s "Defence: "]]))
     (local.set $s (call $strcpy (local.get $s) (call $itoa [[load $fighter Fighter.defence]])))
+    (call $addBonusString (local.get $s) (call $getDefenceBonus (global.get $playerID)))
     (call $putsFgBg (global.get $tempString)
       (local.get $x)
       (local.tee $y (i32.add (local.get $y) (i32.const 1)))
@@ -3056,6 +3256,10 @@
     (local $pos i32)
     (local $s i32)
 
+    (if (call $isEquipped (global.get $actionEntity) (global.get $actionItem))
+      (call $unequipItem (global.get $actionEntity) (global.get $actionItem))
+    )
+
     (call $restoreMode)
     (local.set $pos (call $getPosition (global.get $actionEntity)))
     (call $detachCarried (global.get $actionItem))
@@ -3076,6 +3280,11 @@
       (local.set $consumable (call $getConsumable (global.get $actionItem)))
       (global.set $actionTargeted (i32.const 0))
       (call_indirect $fnLookup [[load $consumable Consumable.fn]])
+      (return)
+    ))
+
+    (if (call $hasEquippable (global.get $actionItem)) (then
+      (call $toggleItemEquip (global.get $actionEntity) (global.get $actionItem))
       (return)
     ))
 
@@ -3242,12 +3451,14 @@
     [[data FValue floor=255]]
   )
 
-  [[reserve ItemChances sizeof_FChance*5 gItemChances]]
+  [[reserve ItemChances sizeof_FChance*7 gItemChances]]
   (data $itemChances (offset [[= ItemChances]])
     [[data FChance floor=0 value=ciHealingPotion chance=35]]
     [[data FChance floor=2 value=ciConfusionScroll chance=10]]
     [[data FChance floor=4 value=ciLightningScroll chance=25]]
+    [[data FChance floor=4 value=ciSword chance=5]]
     [[data FChance floor=6 value=ciFireballScroll chance=25]]
+    [[data FChance floor=6 value=ciChainMail chance=15]]
     [[data FChance floor=255]]
   )
 
