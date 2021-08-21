@@ -185,6 +185,15 @@
         range: mem.getUint8(2),
         radius: mem.getUint8(3),
     }));
+    const equipment = (i) => new DataComponent(i, "Equipment", i.main.Mask_Equipment.value, i.main.gEquipments.value, 2, (mem) => ({
+        weapon: mem.getUint8(0),
+        armour: mem.getUint8(1),
+    }));
+    const equippable = (i) => new DataComponent(i, "Equippable", i.main.Mask_Equippable.value, i.main.gEquippables.value, 3, (mem) => ({
+        slot: mem.getUint8(0),
+        power: mem.getUint8(1),
+        defence: mem.getUint8(2),
+    }));
     const fighter = (i) => new DataComponent(i, "Fighter", i.main.Mask_Fighter.value, i.main.gFighters.value, 8, (mem) => ({
         maxHp: mem.getUint8(0),
         hp: mem.getInt8(1),
@@ -213,6 +222,8 @@
         appearance,
         carried,
         consumable,
+        equipment,
+        equippable,
         fighter,
         inventory,
         item,
